@@ -20,12 +20,14 @@ def make(n):
 
 
 def test_claims_get_stable_ids_and_are_capped(monkeypatch):
-    llm = FakeLLM(make(9))
+    cap = module.get_settings().max_claims_per_reel
+    llm = FakeLLM(make(cap + 4))
     monkeypatch.setattr(module, "get_extract_llm", lambda: llm)
 
     claims = module.extract_claims("Some transcript")
 
-    assert [c.id for c in claims] == ["c1", "c2", "c3", "c4", "c5"]
+    assert [c.id for c in claims] == [f"c{i}" for i in range(1, cap + 1)]
+    assert f"Return at most {cap} claims." in llm.prompt
     assert "Some transcript" in llm.prompt
 
 

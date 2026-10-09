@@ -10,7 +10,7 @@ from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 
 from claimlens.config.settings import get_settings
-from claimlens.llm.factory import get_llm
+from claimlens.llm.factory import get_video_llm
 
 PROMPT_PATH = Path(__file__).resolve().parents[1] / "llm" / "prompts" / "video_ingest.v1.md"
 UPLOAD_TIMEOUT_S = 120
@@ -46,10 +46,11 @@ def _uploaded(video_path: Path) -> Iterator[Any]:
 
 def analyze_video(video_path: Path) -> VideoText:
     """Send the whole video to Gemini and return its transcript and on-screen text."""
-    model = get_settings().claimlens_model or ""
+    settings = get_settings()
+    model = settings.video_model or settings.claimlens_model or ""
     if not model.startswith("google_genai:"):
         raise RuntimeError(
-            "INGEST_PATH=video_llm needs a Gemini model (CLAIMLENS_MODEL=google_genai:...); "
+            "INGEST_PATH=video_llm needs a Gemini model (VIDEO_MODEL=google_genai:...); "
             "use INGEST_PATH=asr_ocr with other providers"
         )
     with _uploaded(video_path) as uploaded:
@@ -59,7 +60,7 @@ def analyze_video(video_path: Path) -> VideoText:
                 {"type": "media", "file_uri": uploaded.uri, "mime_type": "video/mp4"},
             ]
         )
-        result = get_llm().with_structured_output(VideoText).invoke([message])
+        result = get_video_llm().with_structured_output(VideoText).invoke([message])
     video_text = VideoText.model_validate(result)
     return VideoText(
         transcript=video_text.transcript.strip(),

@@ -20,7 +20,11 @@ class Settings(BaseSettings):
     # Optional stronger model for extracting claims; same fallback and temperature rules as verify
     extract_model: str | None = None
     extract_temperature: float | None = None
-    ingest_path: Literal["asr_ocr", "video_llm"] = "asr_ocr"  # video_llm is Gemini only
+    # Gemini model for INGEST_PATH=video_llm (e.g. "google_genai:<gemini-model>"); same fallback
+    # and temperature rules as verify
+    video_model: str | None = None
+    video_temperature: float | None = None
+    ingest_path: Literal["asr_ocr", "video_llm"] = "asr_ocr"  # video_llm needs a Gemini model
     ocr_max_frames: int = Field(default=30, ge=0)  # frames sampled for OCR; 0 means all
     ocr_languages: str = "en"  # comma-separated easyocr codes, e.g. "en,hi"
 
@@ -29,8 +33,8 @@ class Settings(BaseSettings):
     llm_max_retries: int = 6  # backoff on 429s; free tiers rate-limit hard
     llm_timeout_s: float = 60
 
-    max_claims_per_reel: int = 5
-    max_keyframes: int = 10
+    max_claims_per_reel: int = 10
+    max_keyframes: int = 20
     max_attempts: int = 3  # first try + 2 retries
     # Verdicts below this confidence abstain as nei
     min_confidence_score: float = Field(default=0.7, ge=0, le=1)

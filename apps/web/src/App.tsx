@@ -3,7 +3,7 @@ import { ApiError, createCheck, getCheck } from "./api";
 import { CheckView } from "./components/CheckView";
 import { Summary, type Filter } from "./components/Summary";
 import { POLL_MS, STEPS } from "./constants";
-import { loadRecent, remember, type RecentCheck } from "./history";
+import { clearRecent, loadRecent, remember, type RecentCheck } from "./history";
 import type { Check } from "./types";
 
 const jobFromUrl = () => new URLSearchParams(window.location.search).get("job");
@@ -119,7 +119,19 @@ export default function App() {
 
           {recent.length > 0 && (
             <section className="panel">
-              <p className="eyebrow">Recent checks</p>
+              <div className="panel-head">
+                <p className="eyebrow">Recent checks</p>
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => {
+                    clearRecent();
+                    setRecent([]);
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
               <ul className="recent">
                 {recent.map((r) => (
                   <li key={r.id}>

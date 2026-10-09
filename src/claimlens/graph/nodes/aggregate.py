@@ -10,7 +10,8 @@ from claimlens.domain.schemas import Claim, Verdict
 
 Rating = Literal["mostly_supported", "mixed", "misleading", "inconclusive"]
 
-# A reel is "misleading" when at least this share of its decided claims are refuted or misleading.
+# A reel is rated "misleading" (shown as "Mostly false") when more than this share of its
+# decided claims are refuted or misleading; an even split is "mixed" (shown as "Contains false claims").
 MISLEADING_SHARE = 0.5
 # "mostly_supported" needs supported claims to make up at least this share of all claims,
 # so one lucky verdict among many abstentions does not vouch for the reel.
@@ -42,7 +43,7 @@ def aggregate(verdicts: Sequence[Verdict | None]) -> OverallVerdict:
 
     if decided == 0:
         rating: Rating = "inconclusive"
-    elif bad / decided >= MISLEADING_SHARE:
+    elif bad / decided > MISLEADING_SHARE:
         rating = "misleading"
     elif bad > 0:
         rating = "mixed"

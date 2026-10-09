@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 import App from "./App";
 import type { Check } from "./types";
@@ -50,4 +50,15 @@ test("shows the error for a failed check", async () => {
   mockCheck({ ...base, status: "failed", error: "download failed" });
   render(<App />);
   expect(await screen.findByText(/download failed/)).toBeInTheDocument();
+});
+
+test("Clear removes the recent checks", async () => {
+  localStorage.setItem("claimlens.recent", JSON.stringify([{ id: "job1", url: "https://ex.com/reel", at: 1 }]));
+  mockCheck({ ...base, status: "failed", error: "boom" });
+  render(<App />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Clear" }));
+
+  expect(screen.queryByText("Recent checks")).not.toBeInTheDocument();
+  expect(localStorage.getItem("claimlens.recent")).toBeNull();
 });

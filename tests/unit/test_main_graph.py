@@ -83,7 +83,7 @@ def test_no_claims_skips_verification(fakes):
 
     assert state["overall"].rating == "inconclusive"
     assert "verdicts" not in state or state["verdicts"] == []
-    assert state["report"].startswith("# Overall: inconclusive")
+    assert state["report"].startswith("# Overall: Inconclusive")
 
 
 def test_health_claim_runs_to_report_and_state_reloads(

@@ -18,7 +18,9 @@ def v(label: str) -> Verdict | None:
         (["nei", "none"], "inconclusive"),
         ([], "inconclusive"),
         (["supported", "supported", "refuted"], "mixed"),
-        (["supported", "refuted"], "misleading"),
+        (["supported", "refuted"], "mixed"),  # an even split is not "mostly false"
+        (["supported", "refuted", "refuted"], "misleading"),
+        (["supported", "refuted", "nei", "nei", "nei"], "mixed"),
         (["misleading", "nei"], "misleading"),
     ],
 )

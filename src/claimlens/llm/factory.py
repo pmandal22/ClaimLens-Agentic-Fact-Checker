@@ -42,6 +42,12 @@ def get_verify_llm() -> BaseChatModel:
     return _task_llm(settings.verify_model, settings.verify_temperature)
 
 
+def get_video_llm() -> BaseChatModel:
+    """Model for reading a video directly (INGEST_PATH=video_llm): VIDEO_MODEL if set."""
+    settings = get_settings()
+    return _task_llm(settings.video_model, settings.video_temperature)
+
+
 def get_extract_llm() -> BaseChatModel:
     """Model for extracting claims: EXTRACT_MODEL if set, else CLAIMLENS_MODEL."""
     settings = get_settings()
