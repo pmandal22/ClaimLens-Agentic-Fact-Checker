@@ -35,7 +35,6 @@ httpx>=0.27                         # Google Fact Check Tools API
 fastapi>=0.115
 uvicorn[standard]>=0.30
 python-multipart>=0.0.9             # video upload form fields
-streamlit>=1.38
 
 # --- Cloud (Step 9) ---
 google-cloud-storage>=2.18          # uploads with lifecycle deletion

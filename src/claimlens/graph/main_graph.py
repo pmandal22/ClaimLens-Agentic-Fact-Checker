@@ -34,16 +34,17 @@ def thread_config(job_id: str) -> RunnableConfig:
     return {"configurable": {"thread_id": job_id}}
 
 
-def ingest(state: ReelState) -> dict:
+def ingest(state: ReelState, config: RunnableConfig) -> dict:
     from claimlens.ingest.pipeline import read_video_text
 
     video = Path(state["video_path"])
+    job_id = config.get("configurable", {}).get("thread_id", "")
     if work_dir := state.get("work_dir"):
-        transcript, ocr_text, frames = read_video_text(video, Path(work_dir))
+        transcript, ocr_text, frames = read_video_text(video, Path(work_dir), job_id)
         keyframes = [str(f) for f in frames]
     else:
         with tempfile.TemporaryDirectory(prefix="claimlens-graph-ingest-") as tmp:
-            transcript, ocr_text, _ = read_video_text(video, Path(tmp))
+            transcript, ocr_text, _ = read_video_text(video, Path(tmp), job_id)
         keyframes = []
     return {"transcript": transcript, "ocr_text": ocr_text, "keyframes": keyframes}
 

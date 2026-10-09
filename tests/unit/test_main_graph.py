@@ -43,7 +43,7 @@ def fakes(monkeypatch):
     """Replace ingest, the claim extractor and the verify subgraph; returns the claims to emit."""
     claims: list[Claim] = list(CLAIMS)
     monkeypatch.setattr(
-        "claimlens.ingest.pipeline.read_video_text", lambda path, tmp: ("speech", "text", [])
+        "claimlens.ingest.pipeline.read_video_text", lambda path, tmp, job_id="": ("speech", "text", [])
     )
     monkeypatch.setattr(
         "claimlens.graph.nodes.extract_claims.extract_claims", lambda *a, **k: claims

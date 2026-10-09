@@ -74,6 +74,9 @@ services:
     build:
       context: ..
       dockerfile: infra/docker/worker.Dockerfile
+      args:
+        # OCR models for these languages are baked into the image; rebuild after changing it.
+        OCR_LANGUAGES: ${OCR_LANGUAGES:-en}
     image: claimlens-worker:local
     restart: unless-stopped
     env_file: *env-file

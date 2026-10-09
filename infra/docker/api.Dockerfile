@@ -13,11 +13,11 @@ WORKDIR /app
 
 # Dependencies first: this layer is cached until pyproject.toml or uv.lock change.
 COPY pyproject.toml uv.lock README.md ./
-RUN uv sync --frozen --no-dev --no-group pipeline --no-group ui --no-install-project
+RUN uv sync --frozen --no-dev --no-group pipeline --no-install-project
 
 COPY src ./src
 COPY apps ./apps
-RUN uv sync --frozen --no-dev --no-group pipeline --no-group ui
+RUN uv sync --frozen --no-dev --no-group pipeline
 
 RUN useradd --create-home app
 USER app

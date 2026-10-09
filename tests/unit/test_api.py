@@ -247,7 +247,7 @@ def pause_graph_run(client, local_storage, monkeypatch) -> str:
     verdict = Verdict(
         claim_id="c1", label="refuted", confidence=0.9, rationale="Trials.", citations=[]
     )
-    monkeypatch.setattr("claimlens.ingest.pipeline.read_video_text", lambda v, w: ("s", "", []))
+    monkeypatch.setattr("claimlens.ingest.pipeline.read_video_text", lambda v, w, job_id="": ("s", "", []))
     monkeypatch.setattr(
         "claimlens.graph.nodes.extract_claims.extract_claims", lambda *a, **k: [claim]
     )

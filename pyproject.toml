@@ -57,6 +57,13 @@ asr = [
     # faster-whisper 1.x calls av.open(metadata_errors=...), removed in newer PyAV.
     "av<17",
 ]
+# On-screen text OCR; the worker image installs this group (PyTorch comes in as CPU-only).
+ocr = [
+    "easyocr>=1.7",
+    # Listed so [tool.uv.sources] below can pin them to the CPU-only index.
+    "torch",
+    "torchvision",
+]
 # Claim extraction (OpenAI via LangChain); the worker image installs this group.
 llm = [
     "langchain>=1.0",
@@ -77,10 +84,17 @@ pipeline = [
     "scenedetect[opencv]>=0.6",
     "tavily-python>=0.5",
 ]
-ui = [
-    "streamlit>=1.38",
-]
 
 [tool.uv]
 # Plain `uv sync` / `uv run` on your machine installs everything, as before.
-default-groups = ["dev", "pipeline", "ui"]
+default-groups = ["dev", "pipeline"]
+
+# easyocr needs PyTorch; on Linux take the CPU-only wheels, which skip GBs of CUDA libraries.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]

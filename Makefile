@@ -13,7 +13,7 @@ api:
 	uvicorn apps.api.main:app --reload
 
 ui:
-	streamlit run apps/ui/app.py
+	cd apps/web && npm install && npm run dev
 
 eval:
 	python evals/run_eval.py

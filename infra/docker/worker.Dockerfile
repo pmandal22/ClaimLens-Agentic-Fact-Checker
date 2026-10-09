@@ -13,20 +13,29 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH" \
-    HF_HOME=/data/hf
+    HF_HOME=/opt/models/hf \
+    EASYOCR_MODULE_PATH=/opt/models/easyocr
 
 WORKDIR /app
 
 # Dependencies first: this layer is cached until pyproject.toml or uv.lock change.
 COPY pyproject.toml uv.lock README.md ./
-RUN uv sync --frozen --no-dev --group asr --group llm --no-group pipeline --no-group ui --no-install-project
+RUN uv sync --frozen --no-dev --group asr --group ocr --group llm --no-group pipeline --no-install-project
+
+# Bake the OCR and Whisper models into the image so workers never download them at runtime.
+# Before COPY src, so code changes don't repeat the download. OCR_LANGUAGES comes from .env.
+ARG OCR_LANGUAGES=en
+RUN useradd --create-home app \
+    && python -c "import easyocr; easyocr.Reader('${OCR_LANGUAGES}'.split(','), gpu=False, verbose=False)" \
+    && python -c "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')" \
+    && chown -R app /opt/models
 
 COPY src ./src
 COPY apps ./apps
-RUN uv sync --frozen --no-dev --group asr --group llm --no-group pipeline --no-group ui
+RUN uv sync --frozen --no-dev --group asr --group ocr --group llm --no-group pipeline
 
 # Run as a non-root user; /data is where local video storage is mounted.
-RUN useradd --create-home app && mkdir -p /data && chown app /data
+RUN mkdir -p /data && chown app /data
 USER app
 
 CMD ["python", "-m", "apps.worker.main"]

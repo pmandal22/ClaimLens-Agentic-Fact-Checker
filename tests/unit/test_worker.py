@@ -28,7 +28,7 @@ class FakePipeline:
         self.extract_error: Exception | None = None
         self.captions: list[str] = []
 
-    def read_video_text(self, video: Path, work_dir: Path):
+    def read_video_text(self, video: Path, work_dir: Path, job_id: str = ""):
         self.ingest_calls += 1
         frame = work_dir / "frames" / "frame_0001.jpg"
         frame.parent.mkdir(parents=True, exist_ok=True)

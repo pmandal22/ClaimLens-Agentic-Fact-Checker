@@ -1,6 +1,9 @@
 """OCR keyframes with easyocr and de-duplicate repeated lines."""
 
+import fcntl
+import os
 import re
+import warnings
 from collections.abc import Iterable, Sequence
 from functools import lru_cache
 from pathlib import Path
@@ -9,14 +12,25 @@ from typing import Any
 MIN_CONFIDENCE = 0.4
 MIN_ALNUM_CHARS = 3
 
+# easyocr always asks for pinned memory, which only helps on a GPU; on CPU torch warns per frame.
+warnings.filterwarnings(
+    "ignore", message=".*'pin_memory' argument is set as true", category=UserWarning
+)
+
 
 @lru_cache(maxsize=4)
 def _reader(languages: tuple[str, ...]) -> Any:
     try:
         import easyocr
     except Exception as exc:  # pragma: no cover - environment-dependent
-        raise RuntimeError("easyocr is not installed; install the 'pipeline' dependency group") from exc
-    return easyocr.Reader(list(languages), gpu=False, verbose=False)
+        raise RuntimeError("easyocr is not installed; install the 'ocr' dependency group") from exc
+    # The worker image ships models for its OCR_LANGUAGES; Reader() downloads any others into
+    # EASYOCR_MODULE_PATH. Hold a lock: two concurrent first downloads would corrupt the files.
+    model_dir = Path(os.environ.get("EASYOCR_MODULE_PATH") or Path.home() / ".EasyOCR")
+    model_dir.mkdir(parents=True, exist_ok=True)
+    with open(model_dir / ".download.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return easyocr.Reader(list(languages), gpu=False, verbose=False)
 
 
 def _normalize(line: str) -> str:

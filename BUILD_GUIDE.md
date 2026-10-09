@@ -107,7 +107,7 @@ Start with a clean Python 3.11+ repo managed by `uv`, so every later step drops 
 | Schemas | `pydantic` | Structured LLM output and typed state |
 | Media | `ffmpeg`, `faster-whisper`, `scenedetect`, `easyocr` | Audio, multilingual ASR, keyframes, OCR |
 | Retrieval | `tavily-python`, `httpx` for the Google Fact Check Tools API | Web evidence and existing fact-checks |
-| Serving | `fastapi`, `streamlit` | API and demo UI |
+| Serving | `fastapi`, React + Vite | API and demo UI |
 | Quality | `langsmith`, `pytest` | Tracing and tests |
 
 Keep the provider in config so you can compare models in Step 8:
@@ -134,7 +134,7 @@ claimlens/
     graph.py          # main graph wiring
     config.py         # model names, retry limits, keys
   api/main.py         # FastAPI
-  ui/app.py           # Streamlit
+  web/                # React + TypeScript UI
   evals/              # labeled reels + eval scripts
   tests/
   .env.example        # CLAIMLENS_MODEL, GOOGLE_API_KEY | OPENAI_API_KEY | ANTHROPIC_API_KEY, TAVILY_API_KEY, FACTCHECK_API_KEY, LANGSMITH_API_KEY
@@ -321,7 +321,7 @@ A reel takes longer than a normal web request, so the API starts a job and the U
 
 Read status with `app.get_state(config)`: a paused run shows `human_review` in its `next` nodes.
 
-The Streamlit UI needs three views: an upload form, a results page with one card per claim (label, confidence, rationale and clickable citations, plus the transcript timestamp), and a review panel that appears only when the run is paused.
+The React UI needs three views: an upload form, a results page with one card per claim (label, confidence, rationale and clickable citations, plus the transcript timestamp), and a review panel that appears only when the run is paused.
 
 **Done when:** you can upload a reel in the browser, watch it finish, and approve a paused verdict without touching the terminal.
 

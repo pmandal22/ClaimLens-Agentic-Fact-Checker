@@ -58,7 +58,7 @@ Live check (1oMfwA4cSLs): retries recovered one claim; two still abstain (no evi
 - ✅ Per-claim verification graph: LLM relevance/stance ranking, relevance threshold (`EVIDENCE_RELEVANCE_THRESHOLD`, default 0.5), and a minimum confidence score (`MIN_CONFIDENCE_SCORE`, default 0.7; replaced the 2-strong-evidence rule `MIN_VERDICT_EVIDENCE`). The judge runs once any evidence supports or refutes the claim. Low-confidence or unsupported-citation results abstain as `nei`; ranked evidence and verdicts are saved by the worker.
 - ✅ Live pipeline run on YouTube Short `c1b6adSrK3g`: downloaded and processed successfully; extracted 5 claims, retrieved 36 evidence results, and produced 76 keyframes. Temporary video and artifacts were cleaned up after the run.
 - ✅ Main LangGraph reel graph + checkpointer (PR #2, merged) (`graph/main_graph.py`, `graph/checkpointer.py`): SQLite locally, pooled Postgres when `POSTGRES_URL` is set; worker runs each job as one thread and retried jobs continue from their last checkpoint instead of re-transcribing; graph nodes import ML/LLM code lazily so the API image stays light; `process_video` and `results.needs_review` removed
-- ✅ Streamlit demo UI (`apps/ui/app.py`, `make ui`): submit a URL, poll the job, show overall rating and per-claim verdicts
+- ✅ React + TypeScript UI (`apps/web`, `make ui`): submit a URL, poll the job, show overall rating and per-claim verdicts
 - ✅ Fixed: missing `run_once`, SQLite column mismatch, YouTube format selection, temp dir lifetime
 
 ## In progress 🚧
