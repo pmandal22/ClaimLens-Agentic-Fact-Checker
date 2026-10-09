@@ -23,8 +23,33 @@ INDIA_FACT_CHECKERS = (
     "thequint.com",
     "pib.gov.in",
 )
-INDIA_NEWS = ("thehindu.com", "indianexpress.com", "pti.in")
-GLOBAL_NEWS = ("reuters.com", "apnews.com", "bbc.com")
+INDIA_NEWS = (
+    "thehindu.com",
+    "indianexpress.com",
+    "pti.in",
+    "hindustantimes.com",
+    "ndtv.com",
+    "theprint.in",
+    "scroll.in",
+)
+# Indian business and economy coverage (company figures, markets, regulation).
+INDIA_BUSINESS_NEWS = (
+    "livemint.com",
+    "business-standard.com",
+    "economictimes.indiatimes.com",
+    "moneycontrol.com",
+)
+GLOBAL_NEWS = (
+    "reuters.com",
+    "apnews.com",
+    "bbc.com",
+    "nytimes.com",
+    "washingtonpost.com",
+    "theguardian.com",
+    "npr.org",
+)
+# Business wires; paywalled ones still give Tavily a headline and opening lines.
+GLOBAL_BUSINESS_NEWS = ("bloomberg.com", "ft.com", "cnbc.com", "wsj.com")
 GLOBAL_FACT_CHECKERS = ("snopes.com", "factcheck.org", "fullfact.org", "factcheck.afp.com")
 
 TRUSTED_SOURCES: dict[str, CategorySources] = {
@@ -119,6 +144,7 @@ TRUSTED_SOURCES: dict[str, CategorySources] = {
             "fred.stlouisfed.org",
             "ecb.europa.eu",
             *GLOBAL_NEWS,
+            *GLOBAL_BUSINESS_NEWS,
         ),
         (
             "rbi.org.in",
@@ -130,17 +156,35 @@ TRUSTED_SOURCES: dict[str, CategorySources] = {
             "incometax.gov.in",
             *INDIA_FACT_CHECKERS,
             *INDIA_NEWS,
+            *INDIA_BUSINESS_NEWS,
         ),
     ),
     "technology": CategorySources(
-        ("nist.gov", "w3.org", "ieee.org", "acm.org", "arxiv.org", "arstechnica.com", "reuters.com"),
+        (
+            "nist.gov",
+            "w3.org",
+            "ieee.org",
+            "acm.org",
+            "arxiv.org",
+            # Tech news, where executives' statements and regulatory fights are reported.
+            "arstechnica.com",
+            "theverge.com",
+            "techcrunch.com",
+            "wired.com",
+            *GLOBAL_NEWS,
+            *GLOBAL_BUSINESS_NEWS,
+        ),
         (
             "meity.gov.in",
             "trai.gov.in",
             "uidai.gov.in",
             "cert-in.org.in",
             "digitalindia.gov.in",
+            "medianama.com",  # Indian tech policy
+            "inc42.com",
             *INDIA_FACT_CHECKERS,
+            *INDIA_NEWS,
+            *INDIA_BUSINESS_NEWS,
         ),
     ),
     "sports": CategorySources(
