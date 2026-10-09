@@ -33,8 +33,8 @@ class Settings(BaseSettings):
     llm_max_retries: int = 6  # backoff on 429s; free tiers rate-limit hard
     llm_timeout_s: float = 60
 
-    max_claims_per_reel: int = 5
-    max_keyframes: int = 10
+    max_claims_per_reel: int = 10
+    max_keyframes: int = 20
     max_attempts: int = 3  # first try + 2 retries
     # Verdicts below this confidence abstain as nei
     min_confidence_score: float = Field(default=0.7, ge=0, le=1)
