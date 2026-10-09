@@ -1,12 +1,11 @@
 """Main graph wiring: build_graph(checkpointer) -> compiled app.
 
-ingest -> extract_claims -> verify_claim (one branch per claim) -> aggregate
-       -> human_review (interrupt) when any claim is flagged -> report
+ingest -> extract_claims -> verify_claim (one branch per claim) -> aggregate -> report
 
 A reel with no claims skips verification and is rated "inconclusive".
 
-Ingest, claim extraction and verification import their code when they run, so the API can
-build this graph to read and resume runs without the ML and LLM packages installed.
+Ingest, claim extraction and verification import their code when they run, so the graph can
+be built without the ML and LLM packages installed.
 """
 
 import tempfile
@@ -20,11 +19,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Send
 
 from claimlens.graph.nodes.aggregate import aggregate as rate_reel
-from claimlens.graph.nodes.human_review import (
-    apply_review,
-    flagged_claims,
-    human_review,
-)
+from claimlens.graph.nodes.aggregate import in_claim_order
 from claimlens.graph.nodes.report import render_report
 from claimlens.graph.state import ClaimState, ReelState
 
@@ -81,13 +76,7 @@ def verify_claim(state: ClaimState) -> dict:
 
 def aggregate(state: ReelState) -> dict:
     claims = state.get("claims", [])
-    return {"overall": rate_reel(apply_review(claims, state.get("verdicts", []), None))}
-
-
-def route_review(state: ReelState) -> Literal["human_review", "report"]:
-    if flagged_claims(state.get("claims", []), state.get("verdicts", [])):
-        return "human_review"
-    return "report"
+    return {"overall": rate_reel(in_claim_order(claims, state.get("verdicts", [])))}
 
 
 def report(state: ReelState) -> dict:
@@ -96,25 +85,22 @@ def report(state: ReelState) -> dict:
         state.get("verdicts", []),
         state.get("evidence", {}),
         state["overall"],
-        state.get("review"),
     )
     return {"report": text}
 
 
 def build_graph(checkpointer: BaseCheckpointSaver | None = None) -> CompiledStateGraph:
-    """Compile the reel graph. Human review needs a checkpointer to pause and resume."""
+    """Compile the reel graph. A checkpointer lets a retried job continue where it stopped."""
     g = StateGraph(ReelState)
     g.add_node("ingest", ingest)
     g.add_node("extract_claims", extract_claims)
     g.add_node("verify_claim", verify_claim)
     g.add_node("aggregate", aggregate)
-    g.add_node("human_review", human_review)
     g.add_node("report", report)
     g.add_edge(START, "ingest")
     g.add_edge("ingest", "extract_claims")
     g.add_conditional_edges("extract_claims", fan_out, ["verify_claim", "aggregate"])
     g.add_edge("verify_claim", "aggregate")
-    g.add_conditional_edges("aggregate", route_review, ["human_review", "report"])
-    g.add_edge("human_review", "report")
+    g.add_edge("aggregate", "report")
     g.add_edge("report", END)
     return g.compile(checkpointer=checkpointer)

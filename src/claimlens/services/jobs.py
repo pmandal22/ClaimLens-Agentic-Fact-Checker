@@ -17,7 +17,6 @@ class JobStatus(StrEnum):
     DOWNLOADING = "downloading"
     INGESTING = "ingesting"
     VERIFYING = "verifying"
-    NEEDS_REVIEW = "needs_review"
     DONE = "done"
     FAILED = "failed"
 
@@ -27,8 +26,7 @@ ALLOWED_TRANSITIONS: dict[JobStatus, set[JobStatus]] = {
     JobStatus.QUEUED: {JobStatus.DOWNLOADING, JobStatus.FAILED},
     JobStatus.DOWNLOADING: {JobStatus.INGESTING, JobStatus.FAILED},
     JobStatus.INGESTING: {JobStatus.VERIFYING, JobStatus.FAILED},
-    JobStatus.VERIFYING: {JobStatus.NEEDS_REVIEW, JobStatus.DONE, JobStatus.FAILED},
-    JobStatus.NEEDS_REVIEW: {JobStatus.VERIFYING, JobStatus.DONE, JobStatus.FAILED},
+    JobStatus.VERIFYING: {JobStatus.DONE, JobStatus.FAILED},
     JobStatus.DONE: set(),
     # A failed job can be retried by re-queueing it.
     JobStatus.FAILED: {JobStatus.QUEUED},
@@ -88,6 +86,9 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs (status, created_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_video_key ON jobs (video_key);
 """
 
+# Human review was removed; jobs left waiting for it already have their results stored.
+RETIRE_NEEDS_REVIEW = "UPDATE jobs SET status = 'done' WHERE status = 'needs_review'"
+
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
@@ -122,6 +123,7 @@ class SQLiteJobStore:
                 conn.execute("ALTER TABLE jobs ADD COLUMN claim_expires_at TEXT")
             except sqlite3.OperationalError:
                 pass
+            conn.execute(RETIRE_NEEDS_REVIEW)
 
     def _connect(self) -> sqlite3.Connection:
         # One short-lived connection per call keeps this safe across threads and processes.

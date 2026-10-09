@@ -3,7 +3,7 @@
 import operator
 from typing import Annotated, TypedDict
 
-from claimlens.domain.schemas import Claim, Evidence, Review, Verdict
+from claimlens.domain.schemas import Claim, Evidence, Verdict
 from claimlens.graph.nodes.aggregate import OverallVerdict
 
 
@@ -21,7 +21,6 @@ class ReelState(TypedDict, total=False):
     claims: list[Claim]
     verdicts: Annotated[list[Verdict], operator.add]  # merged from parallel branches
     evidence: Annotated[dict[str, list[Evidence]], merge_dicts]  # claim id -> ranked evidence
-    review: Review  # set when a person decided on flagged claims
     overall: OverallVerdict
     report: str
 

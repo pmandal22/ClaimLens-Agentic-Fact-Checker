@@ -1,6 +1,6 @@
 # ClaimLens: WIP Tracker
 
-Last updated: 2026-10-09T14:33:00+05:30
+Last updated: 2026-10-09T20:06:00+05:30
 
 Status key: ✅ done · 🚧 in progress · ⬜ not started
 
@@ -11,9 +11,8 @@ Worker ← Redis → claims job (lease + heartbeat) → downloads video → save
   → LangGraph reel graph (thread id = job id, checkpointed):
     ingest → extract claims → verify each claim in parallel
       [retrieve → rank → (weak? write_queries → retrieve, max 3 tries) → judge]
-    → aggregate → human_review (pause) → report
-  → status "done", or "needs_review" if a verdict needs a person
-Reviewer → POST /checks/{id}/review → resumes the paused run → report → "done"
+    → aggregate → report
+  → status "done"
 Client → GET /checks/{id} → status, plus overall rating and per-claim results (claim, ranked evidence, verdict)
 ```
 Artifacts: `transcripts/{id}.txt`, `ocr/{id}.txt`, `claims/{id}.json`, `evidence/{id}.json`, `verdicts/{id}.json`, `keyframes/{id}/`, `reports/{id}.md`.
@@ -35,7 +34,7 @@ Live check (1oMfwA4cSLs): retries recovered one claim; two still abstain (no evi
 
 ### API
 - ✅ `POST /checks` (202), `GET /checks/{id}`, `GET /health` (`apps/api/`)
-- ✅ `POST /checks/{id}/review`: resumes the run paused at `human_review`, claims the review first (concurrent reviewers get 409), saves `reports/{id}.md`
+- ✅ Human review removed: no `POST /checks/{id}/review`, no `needs_review` status (old `needs_review` jobs become `done` on startup), no `REVIEW_TOKEN`; sensitive topics and low-confidence verdicts no longer pause the run
 - ✅ 422 for bad input, 503 when the queue is down
 
 ### Infra
@@ -72,9 +71,9 @@ Live check (1oMfwA4cSLs): retries recovered one claim; two still abstain (no evi
 5. ✅ Claim extraction node
 6. ✅ Per-claim verification: relevance ranking, thresholds, citation validation, query rewrite and retry (`write_queries`, `routing`, `MAX_ATTEMPTS`), verdict persistence. Results returned by `GET /checks/{id}` once the job is `done`.
 6a. ⬜ Richer snippets for ranking (Wikipedia/web hits are short)
-7. ✅ Main LangGraph graph + checkpointer (`graph/*`): worker runs it per job (thread id = job id) and continues retried jobs from their last checkpoint; review endpoint resumes the paused run; report saved to `reports/{id}.md`
-8. ✅ Human review: `POST /checks/{id}/review`
-9. ✅ Streamlit UI (`apps/ui/app.py`)
+7. ✅ Main LangGraph graph + checkpointer (`graph/*`): worker runs it per job (thread id = job id) and continues retried jobs from their last checkpoint; report saved to `reports/{id}.md`
+8. ✅ Human review removed (the run always finishes without pausing)
+9. ✅ React + TypeScript UI (`apps/web`)
 10. 🚧 Evals (`evals/`): claim-level eval done; still to do: claim recall, citation validity (LLM judges), video-level `reels.jsonl`
 11. ⬜ Deployment (cloud, GCS storage, secrets)
 

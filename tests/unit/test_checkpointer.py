@@ -21,7 +21,7 @@ class _State(TypedDict, total=False):
 
 
 def _build(checkpointer):
-    """Tiny stand-in for the main graph: one step, a human-review pause, then done."""
+    """Tiny stand-in for a graph run: one step, a pause (as if interrupted), then done."""
 
     def first(state: _State) -> dict:
         return {"steps": ["first"]}

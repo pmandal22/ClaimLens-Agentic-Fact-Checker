@@ -1,4 +1,5 @@
 import os
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -111,7 +112,7 @@ def test_claim_resume_waits_for_an_active_lease_after_download(store: JobStore):
     assert store.get(job.id).status == JobStatus.INGESTING
 
 
-@pytest.mark.parametrize("final", [JobStatus.DONE, JobStatus.NEEDS_REVIEW, JobStatus.FAILED])
+@pytest.mark.parametrize("final", [JobStatus.DONE, JobStatus.FAILED])
 def test_claim_resume_does_not_touch_finished_jobs(store: JobStore, final):
     job = store.create(URL)
     store.claim(job.id, worker_id="worker-1", lease_seconds=-1)
@@ -123,6 +124,20 @@ def test_claim_resume_does_not_touch_finished_jobs(store: JobStore, final):
 
     assert store.claim(job.id, resume=True, worker_id="worker-2") is None
     assert store.get(job.id).status == final
+
+
+def test_jobs_left_waiting_for_review_become_done(store: JobStore):
+    job = store.create(URL)
+    if isinstance(store, SQLiteJobStore):
+        with sqlite3.connect(store.db_path) as conn:
+            conn.execute("UPDATE jobs SET status = 'needs_review' WHERE id = ?", (job.id,))
+        reopened: JobStore = SQLiteJobStore(store.db_path)
+    else:
+        with psycopg.connect(TEST_POSTGRES_URL) as conn:
+            conn.execute("UPDATE jobs SET status = 'needs_review' WHERE id = %s", (job.id,))
+        reopened = PostgresJobStore(TEST_POSTGRES_URL)
+
+    assert reopened.get(job.id).status == JobStatus.DONE
 
 
 def test_full_happy_path(store: JobStore):

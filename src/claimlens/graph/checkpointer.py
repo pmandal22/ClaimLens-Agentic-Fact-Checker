@@ -10,12 +10,12 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from claimlens.config.settings import get_settings
-from claimlens.domain.schemas import Claim, Evidence, Review, ReviewDecision, Verdict
+from claimlens.domain.schemas import Claim, Evidence, Verdict
 from claimlens.graph.nodes.aggregate import OverallVerdict
 
 # Our types stored in ReelState. LangGraph warns on (and will soon refuse) restoring
-# classes it wasn't told about, which would leave paused runs unresumable.
-STATE_TYPES = (Claim, Evidence, Verdict, Review, ReviewDecision, OverallVerdict)
+# classes it wasn't told about, which would leave interrupted runs unresumable.
+STATE_TYPES = (Claim, Evidence, Verdict, OverallVerdict)
 
 
 def make_serde() -> JsonPlusSerializer:

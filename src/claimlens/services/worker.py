@@ -28,7 +28,7 @@ Downloader = Callable[[str, Path], Path]
 
 @contextmanager
 def open_graph() -> Generator[CompiledStateGraph]:
-    """The reel graph on the shared checkpointer, so the API can resume runs paused for review."""
+    """The reel graph on the shared checkpointer, so a retried job continues where it stopped."""
     with open_checkpointer() as checkpointer:
         yield build_graph(checkpointer)
 
@@ -41,7 +41,7 @@ def _run_graph(
     store: JobStore,
     storage: Storage,
     caption: str = "",
-) -> JobStatus:
+) -> None:
     """Run (or continue) the job's graph, saving artifacts as stages finish."""
     config = thread_config(job.id)
     # An earlier attempt that got past ingest left checkpoints: continue from the last one
@@ -66,14 +66,9 @@ def _run_graph(
             store.set_status(job.id, JobStatus.VERIFYING)
             verifying = True
 
-    snapshot = graph.get_state(config)
-    results.save_run(storage, job.id, snapshot.values)
+    results.save_run(storage, job.id, graph.get_state(config).values)
     if not verifying:
         store.set_status(job.id, JobStatus.VERIFYING)
-    # Still has work to do means it stopped at human_review's interrupt.
-    if snapshot.next:
-        return JobStatus.NEEDS_REVIEW
-    return JobStatus.DONE
 
 
 def process_job(
@@ -84,9 +79,8 @@ def process_job(
 ) -> Job:
     """Run one claimed job (status DOWNLOADING) through the reel graph.
 
-    On success the job ends DONE, or NEEDS_REVIEW if a verdict must be checked by a person
-    (POST /checks/{id}/review resumes the paused run); claims, evidence and verdicts are in
-    storage under claims/, evidence/ and verdicts/ keyed by job id.
+    On success the job ends DONE; claims, evidence and verdicts are in storage under
+    claims/, evidence/ and verdicts/ keyed by job id.
     Any failure marks the job FAILED with a short message instead of crashing the worker.
     """
     try:
@@ -114,10 +108,8 @@ def process_job(
             store.set_status(job.id, JobStatus.INGESTING)
             try:
                 with open_graph() as graph:
-                    final = _run_graph(
-                        graph, job, local_path, Path(work_dir), store, storage, caption
-                    )
-                return store.set_status(job.id, final)
+                    _run_graph(graph, job, local_path, Path(work_dir), store, storage, caption)
+                return store.set_status(job.id, JobStatus.DONE)
             except Exception as err:
                 logger.exception("job=%s pipeline failed", job.id)
                 return store.set_status(

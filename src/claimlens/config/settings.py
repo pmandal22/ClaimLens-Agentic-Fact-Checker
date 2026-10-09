@@ -32,10 +32,8 @@ class Settings(BaseSettings):
     max_claims_per_reel: int = 5
     max_keyframes: int = 10
     max_attempts: int = 3  # first try + 2 retries
-    # Verdicts below this confidence abstain as nei and are flagged for review
+    # Verdicts below this confidence abstain as nei
     min_confidence_score: float = Field(default=0.7, ge=0, le=1)
-    # When set, POST /checks/{id}/review needs this in the X-Review-Token header.
-    review_token: str | None = None
     min_trusted_evidence: int = 2  # stop searching further queries once this many results are found
     evidence_relevance_threshold: float = Field(default=0.5, ge=0, le=1)
     evidence_per_source: int = 3

@@ -10,6 +10,7 @@ from psycopg.rows import dict_row
 from claimlens.services.jobs import (
     ALLOWED_TRANSITIONS,
     IN_PROGRESS,
+    RETIRE_NEEDS_REVIEW,
     InvalidTransitionError,
     Job,
     JobNotFoundError,
@@ -59,6 +60,7 @@ class PostgresJobStore:
             # Add columns if missing (safe to run repeatedly).
             conn.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS claimed_by TEXT")
             conn.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS claim_expires_at TIMESTAMPTZ")
+            conn.execute(RETIRE_NEEDS_REVIEW)
 
     def _connect(self) -> psycopg.Connection[dict[str, Any]]:
         # One short-lived connection per call. `with conn:` commits on success and rolls

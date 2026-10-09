@@ -37,12 +37,9 @@ claimlens/
       main_graph.py               # build_graph(checkpointer) -> compiled app
       checkpointer.py             # Sqlite locally, Postgres in prod
       nodes/
-        extract_claims.py  aggregate.py  human_review.py  report.py
+        extract_claims.py  aggregate.py  report.py
       verify/
         subgraph.py  write_queries.py  retrieve.py  rank.py  judge.py  routing.py
-    safety/
-      guards.py                   # sensitive-topic routing, untrusted-text wrapping
-      policies.yaml               # topics that always need human review
     services/
       jobs.py                     # start, get status, resume a run
       storage.py                  # GCS / S3 / local behind one interface
@@ -52,13 +49,13 @@ claimlens/
   apps/                           # thin entry points that call services/
     api/
       main.py                     # FastAPI app factory
-      routes/checks.py            # POST /checks, GET /checks/{id}, POST /checks/{id}/review
+      routes/checks.py            # POST /checks, GET /checks/{id}
       dto.py                      # request/response models (not domain schemas)
       deps.py                     # auth, rate limits, injected services
     worker/
       main.py                     # pulls jobs from the queue, runs the graph
-    ui/
-      app.py                      # Streamlit demo
+    web/
+      (React + TypeScript UI, Vite)
 
   evals/
     datasets/reels.jsonl          # labeled claims and verdicts

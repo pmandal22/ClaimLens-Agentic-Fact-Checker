@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from claimlens.domain.schemas import Verdict
+from claimlens.domain.schemas import Claim, Verdict
 
 Rating = Literal["mostly_supported", "mixed", "misleading", "inconclusive"]
 
@@ -21,6 +21,15 @@ class OverallVerdict(BaseModel):
     rating: Rating
     summary: str
     counts: dict[str, int]
+
+
+def in_claim_order(claims: Sequence[Claim], verdicts: Sequence[Verdict]) -> list[Verdict | None]:
+    """Each claim's verdict, in claim order; None for a claim without one.
+
+    Parallel branches append verdicts in completion order, so they are looked up by claim id.
+    """
+    by_id = {v.claim_id: v for v in verdicts}
+    return [by_id.get(c.id) for c in claims]
 
 
 def aggregate(verdicts: Sequence[Verdict | None]) -> OverallVerdict:

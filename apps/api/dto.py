@@ -1,8 +1,7 @@
 """Request/response models (kept separate from domain schemas)."""
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, HttpUrl
 
-from claimlens.domain.schemas import ReviewDecision
 from claimlens.graph.nodes.aggregate import OverallVerdict, aggregate
 from claimlens.services.jobs import Job, JobStatus
 from claimlens.services.results import ClaimResult
@@ -13,11 +12,6 @@ class CheckRequest(BaseModel):
     url: HttpUrl
 
 
-class ReviewRequest(BaseModel):
-    # One decision per flagged claim; unflagged claims may be relabelled too.
-    decisions: list[ReviewDecision] = Field(max_length=100)
-
-
 class CheckResponse(BaseModel):
     id: str
     url: str
@@ -25,7 +19,7 @@ class CheckResponse(BaseModel):
     error: str | None
     created_at: str
     updated_at: str
-    results: list[ClaimResult] | None = None  # set once the job is done or needs review
+    results: list[ClaimResult] | None = None  # set once the job is done
     overall: OverallVerdict | None = None
 
     @classmethod

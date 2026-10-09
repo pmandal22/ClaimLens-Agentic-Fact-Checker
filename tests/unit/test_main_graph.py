@@ -3,7 +3,6 @@ from pathlib import Path
 
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.types import Command
 
 from claimlens.config.settings import get_settings
 from claimlens.domain.schemas import Claim, Evidence, Verdict
@@ -63,7 +62,7 @@ def config(thread: str) -> dict:
     return {"configurable": {"thread_id": thread}}
 
 
-def test_unflagged_reel_runs_to_report(fakes):
+def test_reel_runs_to_report(fakes):
     fakes[:] = [CLAIMS[0]]
     app = main_graph.build_graph(InMemorySaver(serde=make_serde()))
 
@@ -87,7 +86,7 @@ def test_no_claims_skips_verification(fakes):
     assert state["report"].startswith("# Overall: inconclusive")
 
 
-def test_sensitive_claim_pauses_and_resumes_after_restart(
+def test_health_claim_runs_to_report_and_state_reloads(
     fakes, tmp_path: Path, monkeypatch, caplog
 ):
     monkeypatch.setenv("CHECKPOINT_DB", str(tmp_path / "cp.db"))
@@ -96,36 +95,14 @@ def test_sensitive_claim_pauses_and_resumes_after_restart(
     cfg = config("t3")
 
     with open_checkpointer() as cp:
-        app = main_graph.build_graph(cp)
-        app.invoke({"video_path": "reel.mp4"}, cfg)
-        snapshot = app.get_state(cfg)
-        assert snapshot.next == ("human_review",)
-        (pending,) = snapshot.interrupts
-        assert [item["claim"]["id"] for item in pending.value["review"]] == ["c2"]
-        assert pending.value["review"][0]["reasons"] == ["Sensitive topic: health"]
+        main_graph.build_graph(cp).invoke({"video_path": "reel.mp4"}, cfg)
 
-    # A fresh checkpointer stands in for a restarted worker.
+    # A fresh checkpointer stands in for a restarted worker reading the finished run.
     with caplog.at_level(logging.WARNING), open_checkpointer() as cp:
-        app = main_graph.build_graph(cp)
-        review = {
-            "decisions": [{"claim_id": "c2", "label": "misleading", "note": "Overstated."}],
-            "reviewed_at": "2026-10-09T10:00:00Z",
-        }
-        state = app.invoke(Command(resume=review), cfg)
+        snapshot = main_graph.build_graph(cp).get_state(cfg)
     get_settings.cache_clear()
 
+    assert snapshot.next == ()  # sensitive topics no longer pause the run
     assert "unregistered type" not in caplog.text
-    assert state["review"].decisions[0].label == "misleading"
-    assert state["overall"].counts["misleading"] == 1
-    assert "**Misleading**" in state["report"]
-    assert "Reviewed by a person: Overstated." in state["report"]
-
-
-def test_review_missing_a_flagged_claim_is_rejected(fakes):
-    app = main_graph.build_graph(InMemorySaver(serde=make_serde()))
-    cfg = config("t4")
-    app.invoke({"video_path": "reel.mp4"}, cfg)
-
-    with pytest.raises(ValueError, match="missing decisions"):
-        app.invoke(Command(resume={"decisions": [], "reviewed_at": "now"}), cfg)
-    assert app.get_state(cfg).next == ("human_review",)  # still waiting, can be retried
+    assert snapshot.values["overall"].counts["refuted"] == 1
+    assert "**Refuted**" in snapshot.values["report"]

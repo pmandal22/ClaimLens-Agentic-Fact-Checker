@@ -8,7 +8,7 @@ dependencies = [
     "fastapi>=0.115",
     "google-cloud-storage>=2.18",
     "httpx>=0.27",
-    # The API resumes runs paused for review and the worker runs them, so both need these.
+    # The worker runs the graph and checkpoints it, so a retried job continues where it stopped.
     "langgraph>=1.0",
     "langgraph-checkpoint-postgres>=2.0",
     "langgraph-checkpoint-sqlite>=2.0",

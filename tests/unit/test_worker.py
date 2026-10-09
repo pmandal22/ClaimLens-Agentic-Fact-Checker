@@ -289,15 +289,14 @@ def test_run_forever_survives_errors_and_keeps_going(store, storage):
     assert flaky.calls == 2
 
 
-def test_flagged_verdicts_park_the_job_for_review(store, storage, queue, pipeline):
+def test_sensitive_topic_job_finishes_without_waiting(store, storage, queue, pipeline):
     pipeline.claims = [Claim(id="c1", text="Garlic cures flu.", source="speech", category="health")]
     job = submit_check(URL, store, queue)
 
     run(store, storage, queue)
 
-    assert store.get(job.id).status == JobStatus.NEEDS_REVIEW
-    assert storage.exists(f"verdicts/{job.id}.json")
-    assert not storage.exists(f"reports/{job.id}.md")  # written once the review resumes the run
+    assert store.get(job.id).status == JobStatus.DONE
+    assert storage.exists(f"reports/{job.id}.md")
 
 
 def test_finished_job_stores_every_artifact(store, storage, queue, pipeline):
