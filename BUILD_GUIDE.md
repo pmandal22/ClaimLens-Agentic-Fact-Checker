@@ -22,7 +22,7 @@ claimlens/
       prompts/                    # versioned prompt files, never inline strings
         extract_claims.v1.md
         write_queries.v1.md
-        judge.v1.md
+        judge.v2.md
     ingest/
       audio.py  asr.py  keyframes.py  ocr.py
       video_llm.py                # Gemini direct-video path

@@ -137,6 +137,38 @@ def test_judge_converts_below_min_confidence_score_to_nei(monkeypatch):
     assert "below the minimum confidence score" in verdict.rationale
 
 
+def judged_as(label: str) -> StructuredModel:
+    return StructuredModel(
+        Verdict(
+            claim_id="c1",
+            label=label,
+            confidence=0.95,
+            rationale="The breakdown by country is not in the evidence.",
+            citations=["https://example.test/0"],
+        )
+    )
+
+
+@pytest.mark.parametrize("label", ["misleading", "refuted"])
+def test_judge_abstains_on_misleading_or_refuted_without_refuting_evidence(monkeypatch, label):
+    monkeypatch.setattr(judge_module, "get_verify_llm", lambda: judged_as(label))
+
+    verdict = judge_module.make_verdict(claim(), [evidence(0, "supports"), evidence(1, "neutral")])
+
+    assert verdict.label == "nei"
+    assert verdict.citations == ["https://example.test/0"]
+    assert f"not marked {label}" in verdict.rationale
+
+
+@pytest.mark.parametrize("label", ["misleading", "refuted"])
+def test_judge_keeps_misleading_or_refuted_with_refuting_evidence(monkeypatch, label):
+    monkeypatch.setattr(judge_module, "get_verify_llm", lambda: judged_as(label))
+
+    verdict = judge_module.make_verdict(claim(), [evidence(0, "refutes")])
+
+    assert verdict.label == label
+
+
 def test_judge_never_returns_citations_outside_ranked_evidence(monkeypatch):
     monkeypatch.setattr(
         judge_module,

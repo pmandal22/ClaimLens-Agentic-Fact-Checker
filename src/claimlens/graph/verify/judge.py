@@ -8,7 +8,7 @@ from claimlens.domain.schemas import Claim, Evidence, Verdict
 from claimlens.graph.state import ClaimState
 from claimlens.llm.factory import get_verify_llm
 
-PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "judge.v1.md"
+PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "judge.v2.md"
 
 
 def _no_evidence_verdict(claim_id: str, found: int) -> Verdict:
@@ -21,7 +21,7 @@ def _no_evidence_verdict(claim_id: str, found: int) -> Verdict:
 
 
 def make_verdict(claim: Claim, evidence: list[Evidence]) -> Verdict:
-    """Judge ranked evidence, applying citation and minimum-confidence gates."""
+    """Judge ranked evidence, applying citation, contradiction and minimum-confidence gates."""
     settings = get_settings()
     claim_id = claim.id
     # Nothing to cite: skip the LLM call rather than ask it to guess.
@@ -49,6 +49,21 @@ def make_verdict(claim: Claim, evidence: list[Evidence]) -> Verdict:
             confidence=verdict.confidence,
             rationale="The judge did not provide a valid citation from the ranked evidence.",
             citations=[],
+        )
+    # Calling a claim false or misleading needs evidence against it. When the ranker found
+    # none, the judge is usually treating an unverified detail as a false one.
+    if verdict.label in ("refuted", "misleading") and not any(
+        item.stance == "refutes" for item in evidence
+    ):
+        return Verdict(
+            claim_id=claim_id,
+            label="nei",
+            confidence=verdict.confidence,
+            rationale=(
+                f"{verdict.rationale} No ranked evidence contradicts the claim, so it is not "
+                f"marked {verdict.label}; abstaining."
+            ),
+            citations=citations,
         )
     if verdict.label != "nei" and verdict.confidence < settings.min_confidence_score:
         return Verdict(
