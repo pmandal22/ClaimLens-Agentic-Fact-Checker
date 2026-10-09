@@ -62,7 +62,6 @@ llm = [
     "langchain>=1.0",
     "langchain-core>=1.0",
     "langchain-openai>=0.3",
-    "typesafe-sdk>=0.7.2",
 ]
 # Heavy ML/LLM packages. Docker images for the API and worker skip this group until needed.
 pipeline = [
@@ -77,7 +76,6 @@ pipeline = [
     "langsmith>=0.1",
     "scenedetect[opencv]>=0.6",
     "tavily-python>=0.5",
-    "typesafe-sdk>=0.1",
 ]
 ui = [
     "streamlit>=1.38",

@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 from claimlens.config.settings import get_settings
 from claimlens.domain.schemas import Claim, Evidence
 from claimlens.graph.state import ClaimState
-from claimlens.graph.verify.jev_rank import assess_evidence
 from claimlens.llm.factory import get_llm
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "rank.v1.md"
@@ -55,23 +54,6 @@ def _llm_assess(claim: Claim, items: list[tuple[int, Evidence]]) -> dict[int, tu
     return by_index
 
 
-def _assess_all(claim: Claim, evidence: list[Evidence]) -> dict[int, tuple[float, str]]:
-    """Assess with Jev when configured, sending low-confidence or failed items to the LLM."""
-    indexed = list(enumerate(evidence))
-    if get_settings().ranker != "jev":
-        return _llm_assess(claim, indexed)
-
-    min_confidence = get_settings().jev_min_confidence
-    jev = assess_evidence(claim, indexed)
-    assessed = {
-        i: (rel, stance) for i, (rel, stance, conf) in jev.items() if conf >= min_confidence
-    }
-    uncertain = [(i, item) for i, item in indexed if i not in assessed]
-    if uncertain:
-        assessed.update(_llm_assess(claim, uncertain))
-    return assessed
-
-
 def score_evidence(claim: Claim, evidence: list[Evidence]) -> list[Evidence]:
     """Assess each result, discard low-relevance items, and return the best five."""
     if not evidence:
@@ -80,7 +62,7 @@ def score_evidence(claim: Claim, evidence: list[Evidence]) -> list[Evidence]:
     threshold = get_settings().evidence_relevance_threshold
     ranked = [
         (relevance, index, evidence[index].model_copy(update={"stance": stance}))
-        for index, (relevance, stance) in _assess_all(claim, evidence).items()
+        for index, (relevance, stance) in _llm_assess(claim, list(enumerate(evidence))).items()
         if relevance >= threshold
     ]
     ranked.sort(key=lambda item: (-item[0], item[1]))

@@ -30,8 +30,6 @@ class Settings(BaseSettings):
     review_token: str | None = None
     min_trusted_evidence: int = 2  # fewer results than this from trusted sources triggers Tavily
     evidence_relevance_threshold: float = Field(default=0.5, ge=0, le=1)
-    ranker: Literal["llm", "jev"] = "llm"
-    jev_min_confidence: float = Field(default=0.8, ge=0, le=1)  # below this, the LLM re-assesses
     min_verdict_evidence: int = Field(default=2, ge=1)
     evidence_per_source: int = 3
 

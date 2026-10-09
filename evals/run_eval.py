@@ -1,9 +1,9 @@
-"""Claim-level eval: compare rankers on the same retrieved evidence.
+"""Claim-level eval: rank and judge each labeled claim on cached retrieved evidence.
 
-Evidence is retrieved once per claim and cached, so every variant ranks and judges identical
-inputs and differences come only from the ranker. Single pass (no query-rewrite retries).
+Evidence is retrieved once per claim and cached, so repeated runs rank and judge identical
+inputs. Single pass (no query-rewrite retries).
 
-    python evals/run_eval.py --rankers llm,jev
+    python evals/run_eval.py
     python evals/run_eval.py --refresh          # re-run retrieval instead of using the cache
     python evals/run_eval.py --limit 5          # quick smoke run
 """
@@ -64,9 +64,7 @@ def load_evidence(rows: list[dict], refresh: bool) -> dict[str, list[Evidence]]:
     return {k: [Evidence.model_validate(e) for e in v] for k, v in cached.items()}
 
 
-def run_variant(ranker: str, rows: list[dict], evidence: dict[str, list[Evidence]]) -> list[dict]:
-    base = get_settings()
-    rank_module.get_settings = lambda: base.model_copy(update={"ranker": ranker})
+def run_variant(rows: list[dict], evidence: dict[str, list[Evidence]]) -> list[dict]:
     results = []
     for row in rows:
         claim, hits = to_claim(row), evidence[row["id"]]
@@ -151,7 +149,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--rankers", default="llm,jev")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--refresh", action="store_true")
     args = parser.parse_args()
@@ -161,11 +158,9 @@ def main() -> None:
     evidence = load_evidence(rows, args.refresh)
 
     floor = get_settings().confidence_floor
-    per_claim, summaries = {}, {}
-    for ranker in args.rankers.split(","):
-        print(f"ranking + judging with ranker={ranker}", flush=True)
-        per_claim[ranker] = run_variant(ranker, rows, evidence)
-        summaries[ranker] = summarize(per_claim[ranker], floor)
+    print("ranking + judging", flush=True)
+    per_claim = {"llm": run_variant(rows, evidence)}
+    summaries = {"llm": summarize(per_claim["llm"], floor)}
 
     report = render(summaries, per_claim, rows)
     print("\n" + report)
