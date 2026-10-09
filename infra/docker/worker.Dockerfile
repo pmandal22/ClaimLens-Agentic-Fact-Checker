@@ -1,4 +1,4 @@
-# Worker image: pulls jobs from Redis, downloads videos, stores them.
+# Worker image: pulls jobs from Redis, downloads videos, runs the reel graph.
 # Build from the project root:  docker build -f infra/docker/worker.Dockerfile .
 FROM python:3.12-slim
 

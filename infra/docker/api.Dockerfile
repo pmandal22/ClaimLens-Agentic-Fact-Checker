@@ -1,4 +1,4 @@
-# API image: serves POST /checks and GET /checks/{id}.
+# API image: serves POST /checks, GET /checks/{id} and POST /checks/{id}/review (resumes paused runs).
 # Build from the project root:  docker build -f infra/docker/api.Dockerfile .
 FROM python:3.12-slim
 

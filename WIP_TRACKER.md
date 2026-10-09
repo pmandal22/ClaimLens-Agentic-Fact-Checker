@@ -65,7 +65,7 @@ Live check (1oMfwA4cSLs): retries recovered one claim; two still abstain (no evi
 5. ✅ Claim extraction node
 6. ✅ Per-claim verification: relevance ranking, thresholds, citation validation, query rewrite and retry (`write_queries`, `routing`, `MAX_ATTEMPTS`), verdict persistence. Results returned by `GET /checks/{id}` once the job is `done`.
 6a. ⬜ Richer snippets for ranking (Wikipedia/web hits are short)
-7. ⬜ Main LangGraph graph + checkpointer (`graph/*`)
+7. ✅ Main LangGraph graph + checkpointer (`graph/*`): worker runs it per job (thread id = job id) and continues retried jobs from their last checkpoint; review endpoint resumes the paused run; report saved to `reports/{id}.md`
 8. ⬜ Human review: `POST /checks/{id}/review`
 9. ⬜ Streamlit UI (`apps/ui/app.py`)
 10. ⬜ Evals (`evals/`)
@@ -82,7 +82,7 @@ Live check (1oMfwA4cSLs): retries recovered one claim; two still abstain (no evi
 - **Local defaults:** the Postgres password is `claimlens`. Set real values in `.env` before sharing.
 - **Images:** ML packages (PyTorch, easyocr, whisper) are not in the API or worker images yet.
 - **macOS:** hidden `.pth` file, so run with `PYTHONPATH=src:.` outside pytest.
-- **Placeholders:** `graph/*`, `apps/ui/app.py`, `config/logging.py` are docstring-only.
+- **Placeholders:** `apps/ui/app.py`, `config/logging.py` are docstring-only.
 - **Real GCS** is untested (fake client only).
 
 ## Handy commands

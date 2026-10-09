@@ -1,13 +1,18 @@
-"""Worker logic: take a queued job, fetch its video into storage, advance its status."""
+"""Worker logic: take a queued job, fetch its video, run the reel graph, advance its status."""
 
 import logging
 import tempfile
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
+from langgraph.graph.state import CompiledStateGraph
+
+from claimlens.graph.checkpointer import open_checkpointer
+from claimlens.graph.main_graph import build_graph, thread_config
 from claimlens.ingest.download import download_video
 from claimlens.services import results
 from claimlens.services.jobs import IN_PROGRESS, Job, JobNotFoundError, JobStatus, JobStore
@@ -21,21 +26,66 @@ MAX_ERROR_LENGTH = 500
 Downloader = Callable[[str, Path], Path]
 
 
+@contextmanager
+def open_graph() -> Generator[CompiledStateGraph]:
+    """The reel graph on the shared checkpointer, so the API can resume runs paused for review."""
+    with open_checkpointer() as checkpointer:
+        yield build_graph(checkpointer)
+
+
+def _run_graph(
+    graph: CompiledStateGraph,
+    job: Job,
+    video: Path,
+    work_dir: Path,
+    store: JobStore,
+    storage: Storage,
+) -> JobStatus:
+    """Run (or continue) the job's graph, saving artifacts as stages finish."""
+    config = thread_config(job.id)
+    # An earlier attempt that got past ingest left checkpoints: continue from the last one
+    # instead of transcribing again. Before that point there is nothing worth keeping.
+    resume = "transcript" in graph.get_state(config).values
+    graph_input = None if resume else {"video_path": str(video), "work_dir": str(work_dir)}
+    if resume:
+        logger.info("job=%s continuing graph run from its last checkpoint", job.id)
+
+    verifying = False
+    for update in graph.stream(graph_input, config, stream_mode="updates"):
+        if ingested := update.get("ingest"):
+            results.put_text(storage, f"transcripts/{job.id}.txt", ingested["transcript"])
+            results.put_text(storage, f"ocr/{job.id}.txt", ingested["ocr_text"])
+            for frame in map(Path, ingested["keyframes"]):
+                storage.put_file(frame, f"keyframes/{job.id}/{frame.name}")
+        if "extract_claims" in update:
+            store.set_status(job.id, JobStatus.VERIFYING)
+            verifying = True
+
+    snapshot = graph.get_state(config)
+    results.save_run(storage, job.id, snapshot.values)
+    if not verifying:
+        store.set_status(job.id, JobStatus.VERIFYING)
+    # Still has work to do means it stopped at human_review's interrupt.
+    if snapshot.next:
+        return JobStatus.NEEDS_REVIEW
+    return JobStatus.DONE
+
+
 def process_job(
     job: Job,
     store: JobStore,
     storage: Storage,
     downloader: Downloader = download_video,
 ) -> Job:
-    """Run one claimed job (status DOWNLOADING) as far as the pipeline is built.
+    """Run one claimed job (status DOWNLOADING) through the reel graph.
 
-    On success the job ends DONE, or NEEDS_REVIEW if a verdict must be checked by a person;
-    claims, evidence and verdicts are in storage under
-    claims/, evidence/ and verdicts/ keyed by job id.
+    On success the job ends DONE, or NEEDS_REVIEW if a verdict must be checked by a person
+    (POST /checks/{id}/review resumes the paused run); claims, evidence and verdicts are in
+    storage under claims/, evidence/ and verdicts/ keyed by job id.
     Any failure marks the job FAILED with a short message instead of crashing the worker.
     """
     try:
-        # The local copy must outlive the pipeline step, so one temp dir covers both.
+        # The local copy must outlive the graph run, so one temp dir covers both.
         with tempfile.TemporaryDirectory(prefix="claimlens-") as work_dir:
             local_path = Path(work_dir) / "video.mp4"
             if storage.exists(job.video_key):
@@ -48,19 +98,10 @@ def process_job(
                 logger.info("job=%s video stored as %s", job.id, job.video_key)
 
             store.set_status(job.id, JobStatus.INGESTING)
-
-            # Run the pipeline: audio extraction, ASR, keyframes, and upload artifacts.
             try:
-                from claimlens.ingest.pipeline import process_video
-
-                artifacts = process_video(job.id, local_path, storage)
-                logger.info("job=%s pipeline produced: %s", job.id, artifacts)
-                # Verification runs inside process_video, so VERIFYING is a brief marker here.
-                store.set_status(job.id, JobStatus.VERIFYING)
-                # Uncertain or sensitive verdicts wait for a person (POST /checks/{id}/review).
-                if results.needs_review(storage, job.id):
-                    return store.set_status(job.id, JobStatus.NEEDS_REVIEW)
-                return store.set_status(job.id, JobStatus.DONE)
+                with open_graph() as graph:
+                    final = _run_graph(graph, job, local_path, Path(work_dir), store, storage)
+                return store.set_status(job.id, final)
             except Exception as err:
                 logger.exception("job=%s pipeline failed", job.id)
                 return store.set_status(

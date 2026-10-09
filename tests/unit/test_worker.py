@@ -1,9 +1,14 @@
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import fakeredis
 import pytest
+from langgraph.checkpoint.memory import InMemorySaver
 
+from claimlens.domain.schemas import Claim, Verdict
+from claimlens.graph.checkpointer import make_serde
+from claimlens.graph.main_graph import build_graph
 from claimlens.services.jobs import JobStatus, SQLiteJobStore
 from claimlens.services.queue import RedisStreamQueue
 from claimlens.services.storage import LocalStorage
@@ -13,14 +18,53 @@ from claimlens.services.worker import process_job, run_forever, run_once
 URL = "https://example.com/reel"
 
 
+class FakePipeline:
+    """Stands in for ingest and the LLM steps; the graph, checkpoints and worker logic are real."""
+
+    def __init__(self):
+        self.claims: list[Claim] = []
+        self.ingest_calls = 0
+        self.extract_error: Exception | None = None
+
+    def read_video_text(self, video: Path, work_dir: Path):
+        self.ingest_calls += 1
+        frame = work_dir / "frames" / "frame_0001.jpg"
+        frame.parent.mkdir(parents=True, exist_ok=True)
+        frame.write_bytes(b"jpg")
+        return "spoken words", "on screen", [frame]
+
+    def extract_claims(self, *args, **kwargs):
+        if self.extract_error:
+            raise self.extract_error
+        return list(self.claims)
+
+
+class FakeVerify:
+    def invoke(self, state):
+        claim = state["claim"]
+        verdict = Verdict(
+            claim_id=claim.id, label="supported", confidence=0.9, rationale="ok", citations=[]
+        )
+        return {"verdicts": [verdict], "evidence": []}
+
+
 @pytest.fixture(autouse=True)
-def stub_pipeline(monkeypatch):
-    # Worker tests cover queue/claim/status logic; the real pipeline needs ffmpeg and Whisper.
+def pipeline(monkeypatch) -> FakePipeline:
+    # Worker tests cover queue/claim/status logic; real ingest needs ffmpeg and Whisper.
+    fake = FakePipeline()
+    monkeypatch.setattr("claimlens.ingest.pipeline.read_video_text", fake.read_video_text)
     monkeypatch.setattr(
-        "claimlens.ingest.pipeline.process_video", lambda job_id, path, storage: {}
+        "claimlens.graph.nodes.extract_claims.extract_claims", fake.extract_claims
     )
-    # The stub writes no verdicts, so there is nothing to review unless a test says so.
-    monkeypatch.setattr("claimlens.services.results.needs_review", lambda storage, job_id: False)
+    monkeypatch.setattr("claimlens.graph.verify.subgraph.verify_claim", FakeVerify())
+    saver = InMemorySaver(serde=make_serde())  # shared across jobs, like the real database
+
+    @contextmanager
+    def open_graph():
+        yield build_graph(saver)
+
+    monkeypatch.setattr("claimlens.services.worker.open_graph", open_graph)
+    return fake
 
 
 @pytest.fixture
@@ -215,13 +259,42 @@ def test_run_forever_survives_errors_and_keeps_going(store, storage):
     assert flaky.calls == 2
 
 
-def test_flagged_verdicts_park_the_job_for_review(store, storage, queue, monkeypatch):
-    monkeypatch.setattr("claimlens.services.results.needs_review", lambda storage, job_id: True)
+def test_flagged_verdicts_park_the_job_for_review(store, storage, queue, pipeline):
+    pipeline.claims = [Claim(id="c1", text="Garlic cures flu.", source="speech", category="health")]
     job = submit_check(URL, store, queue)
 
     run(store, storage, queue)
 
     assert store.get(job.id).status == JobStatus.NEEDS_REVIEW
+    assert storage.exists(f"verdicts/{job.id}.json")
+    assert not storage.exists(f"reports/{job.id}.md")  # written once the review resumes the run
+
+
+def test_finished_job_stores_every_artifact(store, storage, queue, pipeline):
+    pipeline.claims = [Claim(id="c1", text="Paris is in France.", source="speech")]
+    job = submit_check(URL, store, queue)
+
+    run(store, storage, queue)
+
+    assert store.get(job.id).status == JobStatus.DONE
+    for key in ("transcripts/{}.txt", "ocr/{}.txt", "keyframes/{}/frame_0001.jpg",
+                "claims/{}.json", "evidence/{}.json", "verdicts/{}.json", "reports/{}.md"):
+        assert storage.exists(key.format(job.id)), key
+
+
+def test_retried_job_continues_from_its_checkpoint(store, storage, queue, pipeline):
+    pipeline.extract_error = RuntimeError("LLM rate limited")
+    job = submit_check(URL, store, queue)
+    run(store, storage, queue)
+    assert store.get(job.id).status == JobStatus.FAILED
+
+    pipeline.extract_error = None
+    store.set_status(job.id, JobStatus.QUEUED)
+    queue.enqueue(job.id)
+    run(store, storage, queue)
+
+    assert store.get(job.id).status == JobStatus.DONE
+    assert pipeline.ingest_calls == 1  # the transcript came from the first attempt's checkpoint
 
 
 def test_redelivered_job_with_active_lease_is_left_pending(store, storage, queue, client):
