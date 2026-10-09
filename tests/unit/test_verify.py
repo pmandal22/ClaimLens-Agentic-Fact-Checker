@@ -85,6 +85,7 @@ def test_judge_returns_nei_without_calling_llm_when_no_evidence_takes_a_stance(m
 
     assert verdict.label == "nei"
     assert verdict.citations == []
+    assert verdict.rationale.startswith("Found 2 related source(s)")
 
 
 def test_judge_accepts_a_single_confident_piece_of_evidence(monkeypatch):

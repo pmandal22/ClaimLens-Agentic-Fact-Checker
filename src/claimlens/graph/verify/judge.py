@@ -11,14 +11,13 @@ from claimlens.llm.factory import get_llm
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "judge.v1.md"
 
 
-def _no_evidence_verdict(claim_id: str) -> Verdict:
-    return Verdict(
-        claim_id=claim_id,
-        label="nei",
-        confidence=0,
-        rationale="No relevant evidence with a supporting or refuting stance was found.",
-        citations=[],
+def _no_evidence_verdict(claim_id: str, found: int) -> Verdict:
+    rationale = (
+        f"Found {found} related source(s), but none directly confirm or refute this claim."
+        if found
+        else "No relevant evidence was found for this claim."
     )
+    return Verdict(claim_id=claim_id, label="nei", confidence=0, rationale=rationale, citations=[])
 
 
 def make_verdict(claim: Claim, evidence: list[Evidence]) -> Verdict:
@@ -27,7 +26,7 @@ def make_verdict(claim: Claim, evidence: list[Evidence]) -> Verdict:
     claim_id = claim.id
     # Nothing to cite: skip the LLM call rather than ask it to guess.
     if not any(item.stance in ("supports", "refutes") for item in evidence):
-        return _no_evidence_verdict(claim_id)
+        return _no_evidence_verdict(claim_id, len(evidence))
 
     context = [
         {"url": item.url, "title": item.title, "snippet": item.snippet, "stance": item.stance}

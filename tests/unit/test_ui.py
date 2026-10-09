@@ -95,6 +95,18 @@ def test_done_shows_verdict_and_sources(fake_api):
     assert [m.value for m in at.metric] == ["1", "0", "0", "0"]
 
 
+def test_unjudged_abstention_hides_confidence(fake_api):
+    result = DONE["results"][0]
+    fake_api["check"] = {**DONE, "results": [{
+        **result,
+        "evidence": [{**result["evidence"][0], "stance": "neutral"}],
+        "verdict": {**result["verdict"], "label": "nei", "confidence": 0, "citations": []},
+    }]}
+    at = run("job1")
+    assert not at.exception
+    assert not at.get("progress")
+
+
 def test_running_job_shows_progress(fake_api):
     fake_api["check"] = check("ingesting")
     at = run("job1")

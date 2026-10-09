@@ -87,7 +87,12 @@ def show_claim(result: dict[str, Any], pending: bool = False) -> None:
         else:
             text, color = LABELS[verdict["label"]]
             st.badge(text, color=color)
-            st.progress(verdict["confidence"], text=f"Confidence {verdict['confidence']:.0%}")
+            # An abstention with no stance-taking evidence was never scored by the judge.
+            judged = verdict["label"] != "nei" or any(
+                e.get("stance") in ("supports", "refutes") for e in evidence
+            )
+            if judged:
+                st.progress(verdict["confidence"], text=f"Confidence {verdict['confidence']:.0%}")
             st.write(verdict["rationale"])
             if verdict["citations"]:
                 st.markdown("**Sources**")

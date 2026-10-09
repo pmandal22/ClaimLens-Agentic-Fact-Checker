@@ -40,7 +40,13 @@ def render_report(
         if verdict is None:
             lines += ["", "**Not checked.**", ""]
             continue
-        lines += ["", f"**{LABEL_TEXT[verdict.label]}** · confidence {verdict.confidence:.0%}"]
+        heading = f"**{LABEL_TEXT[verdict.label]}**"
+        # An abstention with no stance-taking evidence was never scored by the judge.
+        if verdict.label != "nei" or any(
+            e.stance in ("supports", "refutes") for e in evidence.get(claim.id, [])
+        ):
+            heading += f" · confidence {verdict.confidence:.0%}"
+        lines += ["", heading]
         if decision := decisions.get(claim.id):
             lines.append(f"Reviewed by a person{': ' + decision.note if decision.note else ''}.")
         lines += ["", verdict.rationale, ""]
