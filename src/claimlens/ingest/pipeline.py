@@ -27,10 +27,15 @@ def read_video_text(
         transcript, ocr_text = video_text.transcript, video_text.on_screen_text
         frames = keyframes.extract_keyframes(local_video_path, frames_dir)
     else:
-        # 1) Extract audio, 2) transcribe
-        audio_path = workdir / "audio.wav"
-        audio.extract_audio(local_video_path, audio_path)
-        transcript = asr.transcribe(audio_path)
+        # 1) Extract audio, 2) transcribe. A video with no audio track (text-only reels)
+        # makes ffmpeg fail, so skip ASR and rely on on-screen text and the caption.
+        if audio.has_audio(local_video_path):
+            audio_path = workdir / "audio.wav"
+            audio.extract_audio(local_video_path, audio_path)
+            transcript = asr.transcribe(audio_path)
+        else:
+            logger.info("job=%s video has no audio track; skipping speech-to-text", job_id)
+            transcript = ""
 
         # 2b) OCR sampled keyframes. A failed OCR must not lose the spoken claims.
         frames = keyframes.extract_keyframes(local_video_path, frames_dir)

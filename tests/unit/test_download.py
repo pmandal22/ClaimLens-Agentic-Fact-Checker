@@ -4,7 +4,7 @@ import pytest
 from yt_dlp.utils import DownloadError
 
 from claimlens.ingest import download
-from claimlens.ingest.download import download_video, ensure_public_url
+from claimlens.ingest.download import caption_path, download_video, ensure_public_url
 
 
 def fake_dns(monkeypatch: pytest.MonkeyPatch, ip: str) -> None:
@@ -30,7 +30,13 @@ def test_download_video_rejects_non_http_url(tmp_path: Path):
         download_video("file:///tmp/reel.mp4", tmp_path / "reel.mp4")
 
 
-def test_download_video_moves_file_to_destination(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+@pytest.mark.parametrize(
+    ("info", "caption"),
+    [({"description": "  Drinking water cures flu \n"}, "Drinking water cures flu"), ({}, None)],
+)
+def test_download_video_moves_file_to_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, info: dict, caption: str | None
+):
     fake_dns(monkeypatch, "93.184.216.34")
 
     class FakeYoutubeDL:
@@ -46,7 +52,7 @@ def test_download_video_moves_file_to_destination(tmp_path: Path, monkeypatch: p
         def extract_info(self, _url, download):
             assert download is True
             (tmp_path / "reel.webm").write_bytes(b"reel!")
-            return {}
+            return info
 
         def prepare_filename(self, _info):
             return str(tmp_path / "reel.webm")
@@ -58,6 +64,8 @@ def test_download_video_moves_file_to_destination(tmp_path: Path, monkeypatch: p
 
     assert result == destination
     assert destination.read_bytes() == b"reel!"
+    saved = caption_path(destination)
+    assert (saved.read_text(encoding="utf-8") if saved.exists() else None) == caption
 
 
 def test_download_video_wraps_downloader_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

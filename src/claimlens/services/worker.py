@@ -13,7 +13,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from claimlens.graph.checkpointer import open_checkpointer
 from claimlens.graph.main_graph import build_graph, thread_config
-from claimlens.ingest.download import download_video
+from claimlens.ingest.download import caption_path, download_video
 from claimlens.services import results
 from claimlens.services.jobs import IN_PROGRESS, Job, JobNotFoundError, JobStatus, JobStore
 from claimlens.services.queue import JobQueue, Message
@@ -40,13 +40,18 @@ def _run_graph(
     work_dir: Path,
     store: JobStore,
     storage: Storage,
+    caption: str = "",
 ) -> JobStatus:
     """Run (or continue) the job's graph, saving artifacts as stages finish."""
     config = thread_config(job.id)
     # An earlier attempt that got past ingest left checkpoints: continue from the last one
     # instead of transcribing again. Before that point there is nothing worth keeping.
     resume = "transcript" in graph.get_state(config).values
-    graph_input = None if resume else {"video_path": str(video), "work_dir": str(work_dir)}
+    graph_input = (
+        None
+        if resume
+        else {"video_path": str(video), "work_dir": str(work_dir), "caption": caption}
+    )
     if resume:
         logger.info("job=%s continuing graph run from its last checkpoint", job.id)
 
@@ -88,19 +93,30 @@ def process_job(
         # The local copy must outlive the graph run, so one temp dir covers both.
         with tempfile.TemporaryDirectory(prefix="claimlens-") as work_dir:
             local_path = Path(work_dir) / "video.mp4"
+            # The downloader saves the post's caption next to the video when there is one;
+            # it is stored beside the video so a cached download keeps it too.
+            caption_file = caption_path(local_path)
+            caption_key = str(Path(job.video_key).with_suffix(".caption.txt"))
             if storage.exists(job.video_key):
                 # Same video was fetched before; skip the slow, failure-prone download.
                 logger.info("job=%s video already stored, skipping download", job.id)
                 storage.get_file(job.video_key, local_path)
+                if storage.exists(caption_key):
+                    storage.get_file(caption_key, caption_file)
             else:
                 local_path = downloader(job.url, local_path)
                 storage.put_file(local_path, job.video_key)
+                if caption_file.exists():
+                    storage.put_file(caption_file, caption_key)
                 logger.info("job=%s video stored as %s", job.id, job.video_key)
+            caption = caption_file.read_text(encoding="utf-8") if caption_file.exists() else ""
 
             store.set_status(job.id, JobStatus.INGESTING)
             try:
                 with open_graph() as graph:
-                    final = _run_graph(graph, job, local_path, Path(work_dir), store, storage)
+                    final = _run_graph(
+                        graph, job, local_path, Path(work_dir), store, storage, caption
+                    )
                 return store.set_status(job.id, final)
             except Exception as err:
                 logger.exception("job=%s pipeline failed", job.id)

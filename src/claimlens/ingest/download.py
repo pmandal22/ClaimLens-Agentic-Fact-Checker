@@ -11,6 +11,13 @@ from yt_dlp.utils import DownloadError, match_filter_func
 
 DEFAULT_MAX_BYTES = 100 * 1024 * 1024
 DEFAULT_MAX_DURATION_S = 180
+# Instagram's caption limit; long YouTube descriptions are mostly links and credits.
+MAX_CAPTION_CHARS = 2200
+
+
+def caption_path(video_path: Path) -> Path:
+    """Where download_video saves the post's caption, next to the video."""
+    return video_path.with_suffix(".caption.txt")
 
 
 def ensure_public_url(url: str) -> None:
@@ -77,6 +84,10 @@ def download_video(
         )
     if saved_path != destination:
         saved_path.replace(destination)
+    # The caption often states the reel's claims too; yt-dlp reports it as the description.
+    caption = str(info.get("description") or "").strip()[:MAX_CAPTION_CHARS]
+    if caption:
+        caption_path(destination).write_text(caption, encoding="utf-8")
     return destination
 
 

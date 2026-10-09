@@ -4,6 +4,24 @@ import subprocess
 from pathlib import Path
 
 
+def has_audio(video_path: Path) -> bool:
+    """True if the video has at least one audio stream. Uses ffprobe; raises on failure."""
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=index",
+        "-of",
+        "csv=p=0",
+        str(video_path),
+    ]
+    result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+    return bool(result.stdout.strip())
+
+
 def extract_audio(video_path: Path, out_wav: Path) -> Path:
     """Extract a single-channel WAV suitable for ASR.
 

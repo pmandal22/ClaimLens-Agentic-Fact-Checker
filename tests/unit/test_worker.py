@@ -9,6 +9,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from claimlens.domain.schemas import Claim, Verdict
 from claimlens.graph.checkpointer import make_serde
 from claimlens.graph.main_graph import build_graph
+from claimlens.ingest.download import caption_path
 from claimlens.services.jobs import JobStatus, SQLiteJobStore
 from claimlens.services.queue import RedisStreamQueue
 from claimlens.services.storage import LocalStorage
@@ -25,6 +26,7 @@ class FakePipeline:
         self.claims: list[Claim] = []
         self.ingest_calls = 0
         self.extract_error: Exception | None = None
+        self.captions: list[str] = []
 
     def read_video_text(self, video: Path, work_dir: Path):
         self.ingest_calls += 1
@@ -34,6 +36,7 @@ class FakePipeline:
         return "spoken words", "on screen", [frame]
 
     def extract_claims(self, *args, **kwargs):
+        self.captions.append(kwargs.get("caption", ""))
         if self.extract_error:
             raise self.extract_error
         return list(self.claims)
@@ -142,6 +145,33 @@ def test_already_stored_video_skips_download(store, storage, queue, tmp_path: Pa
     run(store, storage, queue, failing_downloader)  # would fail if it were called
 
     assert store.get(job.id).status == JobStatus.DONE
+
+
+def test_downloaded_caption_reaches_claim_extraction_and_is_stored(
+    store, storage, queue, pipeline
+):
+    def downloader_with_caption(url: str, destination: Path) -> Path:
+        caption_path(destination).write_text("Water cures flu", encoding="utf-8")
+        return fake_downloader(url, destination)
+
+    job = submit_check(URL, store, queue)
+    run(store, storage, queue, downloader_with_caption)
+
+    assert pipeline.captions == ["Water cures flu"]
+    assert storage.exists(job.video_key.removesuffix(".mp4") + ".caption.txt")
+
+
+def test_already_stored_video_keeps_its_caption(store, storage, queue, pipeline, tmp_path: Path):
+    job = submit_check(URL, store, queue)
+    video = tmp_path / "existing.mp4"
+    video.write_bytes(b"old")
+    storage.put_file(video, job.video_key)
+    caption_path(video).write_text("Stored caption", encoding="utf-8")
+    storage.put_file(caption_path(video), job.video_key.removesuffix(".mp4") + ".caption.txt")
+
+    run(store, storage, queue, failing_downloader)
+
+    assert pipeline.captions == ["Stored caption"]
 
 
 def test_duplicate_message_is_dropped_without_reprocessing(store, storage, queue):
