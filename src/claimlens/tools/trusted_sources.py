@@ -1,8 +1,7 @@
-"""Which trusted sources to search for each claim category.
+"""Which trusted sites to search for each claim category.
 
-`searchers` are sites we query directly through their own search API, in order.
-`domains` are the trusted sites we ask Tavily to stay within when the direct sources
-don't produce enough evidence. `india_domains` are put first when a claim is about India.
+`domains` are the trusted sites we ask Tavily to stay within.
+`india_domains` are put first when a claim is about India.
 """
 
 from dataclasses import dataclass
@@ -10,7 +9,6 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class CategorySources:
-    searchers: tuple[str, ...]
     domains: tuple[str, ...]
     india_domains: tuple[str, ...] = ()
 
@@ -31,7 +29,6 @@ GLOBAL_FACT_CHECKERS = ("snopes.com", "factcheck.org", "fullfact.org", "factchec
 
 TRUSTED_SOURCES: dict[str, CategorySources] = {
     "health": CategorySources(
-        ("factcheck", "wikipedia"),
         (
             "who.int",
             "cdc.gov",
@@ -57,7 +54,6 @@ TRUSTED_SOURCES: dict[str, CategorySources] = {
         ),
     ),
     "science": CategorySources(
-        ("factcheck", "wikipedia"),
         (
             "nasa.gov",
             "esa.int",
@@ -83,7 +79,6 @@ TRUSTED_SOURCES: dict[str, CategorySources] = {
         ),
     ),
     "history": CategorySources(
-        ("wikipedia",),
         (
             "britannica.com",
             "history.com",
@@ -103,7 +98,6 @@ TRUSTED_SOURCES: dict[str, CategorySources] = {
         ),
     ),
     "politics": CategorySources(
-        ("factcheck", "wikipedia"),
         ("politifact.com", *GLOBAL_FACT_CHECKERS, *GLOBAL_NEWS),
         (
             "eci.gov.in",
@@ -117,7 +111,6 @@ TRUSTED_SOURCES: dict[str, CategorySources] = {
         ),
     ),
     "economy": CategorySources(
-        ("wikipedia",),
         (
             "worldbank.org",
             "imf.org",
@@ -140,7 +133,6 @@ TRUSTED_SOURCES: dict[str, CategorySources] = {
         ),
     ),
     "technology": CategorySources(
-        ("wikipedia",),
         ("nist.gov", "w3.org", "ieee.org", "acm.org", "arxiv.org", "arstechnica.com", "reuters.com"),
         (
             "meity.gov.in",
@@ -152,7 +144,6 @@ TRUSTED_SOURCES: dict[str, CategorySources] = {
         ),
     ),
     "sports": CategorySources(
-        ("wikipedia",),
         (
             "olympics.com",
             "olympedia.org",
@@ -172,7 +163,6 @@ TRUSTED_SOURCES: dict[str, CategorySources] = {
         ),
     ),
     "general": CategorySources(
-        ("factcheck", "wikipedia"),
         ("britannica.com", *GLOBAL_FACT_CHECKERS, *GLOBAL_NEWS),
         (*INDIA_FACT_CHECKERS, *INDIA_NEWS, "india.gov.in"),
     ),

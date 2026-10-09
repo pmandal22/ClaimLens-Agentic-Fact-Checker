@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     confidence_floor: float = 0.7
     # When set, POST /checks/{id}/review needs this in the X-Review-Token header.
     review_token: str | None = None
-    min_trusted_evidence: int = 2  # fewer results than this from trusted sources triggers Tavily
+    min_trusted_evidence: int = 2  # stop searching further queries once this many results are found
     evidence_relevance_threshold: float = Field(default=0.5, ge=0, le=1)
     min_verdict_evidence: int = Field(default=2, ge=1)
     evidence_per_source: int = 3
@@ -47,7 +47,6 @@ class Settings(BaseSettings):
     postgres_url: str | None = None
 
     tavily_api_key: str | None = None
-    factcheck_api_key: str | None = None
 
 
 @lru_cache

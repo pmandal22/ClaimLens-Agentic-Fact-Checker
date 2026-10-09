@@ -2,7 +2,7 @@ import pytest
 
 from claimlens.domain.schemas import Claim, Evidence
 from claimlens.graph.verify.retrieve import retrieve_evidence
-from claimlens.tools.trusted_sources import domains_for, sources_for
+from claimlens.tools.trusted_sources import domains_for
 
 
 def ev(url: str) -> Evidence:
@@ -19,104 +19,73 @@ class Recorder:
     def __init__(self, results):
         self.results = results
         self.calls = []
+        self.queries = []
 
     def __call__(self, query, limit, include_domains=None):
         self.calls.append(include_domains)
+        self.queries.append(query)
         return self.results if include_domains or self.results else []
 
 
-def test_enough_trusted_results_skips_tavily():
-    tavily = Recorder([ev("https://tavily.example/x")])
-    searchers = {
-        "factcheck": lambda q, n: [],
-        "wikipedia": lambda q, n: [ev("https://wiki/1"), ev("https://wiki/2")],
-    }
-
-    result = retrieve_evidence(claim("health"), searchers, tavily)
-
-    assert [e.url for e in result] == ["https://wiki/1", "https://wiki/2"]
-    assert tavily.calls == []
-
-
-def test_category_selects_which_sources_are_searched():
-    called = []
-    searchers = {
-        name: (lambda q, n, name=name: called.append(name) or [ev(f"https://{name}/1")] * 2)
-        for name in ("factcheck", "wikipedia")
-    }
-
-    retrieve_evidence(claim("history"), searchers, Recorder([]))
-
-    assert called == ["wikipedia"]
-
-
-def test_thin_results_fall_back_to_tavily_on_trusted_domains():
+def test_search_stays_on_trusted_domains():
     tavily = Recorder([ev("https://who.int/tail")])
-    searchers = {name: (lambda q, n: []) for name in ("factcheck", "wikipedia")}
 
-    result = retrieve_evidence(claim("health"), searchers, tavily)
+    result = retrieve_evidence(claim("health"), tavily)
 
     assert [e.url for e in result] == ["https://who.int/tail"]
     assert tavily.calls == [domains_for("health", False)]
 
 
-def test_tavily_opens_up_when_trusted_domains_have_nothing():
+def test_search_opens_up_when_trusted_domains_have_nothing():
     tavily = Recorder([])
-    searchers = {name: (lambda q, n: []) for name in ("factcheck", "wikipedia")}
 
-    retrieve_evidence(claim("health"), searchers, tavily)
+    retrieve_evidence(claim("health"), tavily)
 
     assert tavily.calls == [domains_for("health", False), None]
 
 
-def test_a_failing_source_does_not_stop_the_others():
-    def broken(q, n):
-        raise RuntimeError("down")
+def test_a_failing_query_does_not_stop_the_others():
+    calls = []
 
-    searchers = {
-        "factcheck": broken,
-        "wikipedia": lambda q, n: [ev("https://wiki/1"), ev("https://wiki/2")],
-    }
+    def flaky(query, limit, include_domains=None):
+        calls.append(query)
+        if query == "a":
+            raise RuntimeError("down")
+        return [ev("https://x/1"), ev("https://x/2")]
 
-    result = retrieve_evidence(claim("science"), searchers, Recorder([]))
+    result = retrieve_evidence(claim("science"), flaky, queries=["a", "b"])
 
+    assert calls == ["a", "b"]
     assert len(result) == 2
 
 
 def test_duplicate_urls_are_removed():
-    searchers = {
-        "factcheck": lambda q, n: [ev("https://same")],
-        "wikipedia": lambda q, n: [ev("https://same"), ev("https://other")],
-    }
+    tavily = Recorder([ev("https://same")])
 
-    assert len(retrieve_evidence(claim("general"), searchers, Recorder([]))) == 2
+    result = retrieve_evidence(claim("general"), tavily, queries=["a", "b", "c"])
+
+    assert [e.url for e in result] == ["https://same"]
 
 
 @pytest.mark.parametrize("category", ["health", "science", "history", "politics", "economy", "technology", "sports", "general", "unknown"])
-def test_every_category_has_sources(category):
-    sources = sources_for(category)
-    assert sources.searchers and sources.domains
+def test_every_category_has_domains(category):
+    assert domains_for(category, False)
 
 
 def test_search_terms_are_used_instead_of_the_full_sentence():
-    queries = []
-    searchers = {
-        name: (lambda q, n: queries.append(q) or [ev("https://a"), ev("https://b")])
-        for name in ("factcheck", "wikipedia")
-    }
+    tavily = Recorder([ev("https://a"), ev("https://b")])
     c = Claim(id="c1", text="Long sentence.", source="speech", search_terms="tail embryo")
 
-    retrieve_evidence(c, searchers, Recorder([]))
+    retrieve_evidence(c, tavily)
 
-    assert set(queries) == {"tail embryo"}
+    assert tavily.queries == ["tail embryo"]
 
 
 def test_india_related_claims_search_indian_domains_first():
     tavily = Recorder([ev("https://pib.gov.in/x")])
-    searchers = {name: (lambda q, n: []) for name in ("factcheck", "wikipedia")}
     c = Claim(id="c1", text="t", source="speech", category="health", india_related=True)
 
-    retrieve_evidence(c, searchers, tavily)
+    retrieve_evidence(c, tavily)
 
     assert tavily.calls[0][0] == "mohfw.gov.in"
     assert "who.int" in tavily.calls[0]
@@ -128,24 +97,13 @@ def test_global_claims_do_not_get_indian_domains():
     assert len(domains_for("health", True)) == len(set(domains_for("health", True)))
 
 
-def test_every_query_is_searched_and_results_are_deduplicated():
-    queried = []
+def test_queries_are_searched_until_there_is_enough_evidence():
+    def search(query, limit, include_domains=None):
+        return [ev("https://x/shared"), ev(f"https://x/{query}")] if query != "a" else []
 
-    def wikipedia(query, limit):
-        queried.append(query)
-        return [ev("https://wiki/shared"), ev(f"https://wiki/{query}")]
+    result = retrieve_evidence(claim("health"), search, queries=["a", "b", "c"])
 
-    searchers = {
-        "factcheck": lambda q, n: [],
-        "wikipedia": wikipedia,
-    }
-
-    result = retrieve_evidence(claim("health"), searchers, Recorder([]), queries=["a", "b"])
-
-    assert queried == ["a", "b"]
-    assert [e.url for e in result] == [
-        "https://wiki/shared", "https://wiki/a", "https://wiki/b"
-    ]
+    assert [e.url for e in result] == ["https://x/shared", "https://x/b"]
 
 
 def fake_cache(monkeypatch):
@@ -160,18 +118,12 @@ def fake_cache(monkeypatch):
 
 def test_repeated_searches_are_served_from_the_cache(monkeypatch):
     fake_cache(monkeypatch)
-    calls = []
+    tavily = Recorder([ev("https://x/1"), ev("https://x/2")])
 
-    def wiki(q, n):
-        calls.append(q)
-        return [ev("https://wiki/1"), ev("https://wiki/2")]
+    first = retrieve_evidence(claim("history"), tavily)
+    second = retrieve_evidence(claim("history"), tavily)
 
-    searchers = {"factcheck": lambda q, n: [], "wikipedia": wiki}
-
-    first = retrieve_evidence(claim("history"), searchers, Recorder([]))
-    second = retrieve_evidence(claim("history"), searchers, Recorder([]))
-
-    assert calls == ["Humans have a tail."]
+    assert tavily.queries == ["Humans have a tail."]
     assert [e.url for e in second] == [e.url for e in first]
 
 
@@ -179,28 +131,14 @@ def test_failed_searches_are_not_cached(monkeypatch):
     fake_cache(monkeypatch)
     attempts = []
 
-    def flaky(q, n):
-        attempts.append(q)
+    def flaky(query, limit, include_domains=None):
+        attempts.append(query)
         if len(attempts) == 1:
             raise RuntimeError("429")
-        return [ev("https://wiki/1"), ev("https://wiki/2")]
+        return [ev("https://x/1"), ev("https://x/2")]
 
-    searchers = {"factcheck": lambda q, n: [], "wikipedia": flaky}
-
-    assert retrieve_evidence(claim("history"), searchers, Recorder([])) == []
-    assert len(retrieve_evidence(claim("history"), searchers, Recorder([]))) == 2
-
-
-def test_tavily_fallback_is_cached(monkeypatch):
-    fake_cache(monkeypatch)
-    tavily = Recorder([ev("https://tavily.example/x")])
-    searchers = {"factcheck": lambda q, n: [], "wikipedia": lambda q, n: []}
-
-    retrieve_evidence(claim("history"), searchers, tavily)
-    calls_after_first = len(tavily.calls)
-    retrieve_evidence(claim("history"), searchers, tavily)
-
-    assert len(tavily.calls) == calls_after_first
+    assert retrieve_evidence(claim("history"), flaky) == []
+    assert len(retrieve_evidence(claim("history"), flaky)) == 2
 
 
 def test_a_broken_cache_does_not_stop_retrieval(monkeypatch):
@@ -212,9 +150,6 @@ def test_a_broken_cache_does_not_stop_retrieval(monkeypatch):
             raise ConnectionError("redis down")
 
     monkeypatch.setattr("claimlens.graph.verify.retrieve.get_cache", lambda: Broken())
-    searchers = {
-        "factcheck": lambda q, n: [],
-        "wikipedia": lambda q, n: [ev("https://wiki/1"), ev("https://wiki/2")],
-    }
+    tavily = Recorder([ev("https://x/1"), ev("https://x/2")])
 
-    assert len(retrieve_evidence(claim("history"), searchers, Recorder([]))) == 2
+    assert len(retrieve_evidence(claim("history"), tavily)) == 2
