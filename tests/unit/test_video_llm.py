@@ -20,8 +20,10 @@ class FakeModel:
         return self.result
 
 
-def use_model(monkeypatch, name):
-    settings = video_llm.get_settings().model_copy(update={"claimlens_model": name})
+def use_model(monkeypatch, name, claimlens_model="openai:gpt-test"):
+    settings = video_llm.get_settings().model_copy(
+        update={"video_model": name, "claimlens_model": claimlens_model}
+    )
     monkeypatch.setattr(video_llm, "get_settings", lambda: settings)
 
 
@@ -30,7 +32,7 @@ def test_analyze_video_sends_uploaded_video_and_returns_both_channels(monkeypatc
     video.write_bytes(b"video-bytes")
     model = FakeModel({"transcript": " spoken ", "on_screen_text": "shown\n"})
     use_model(monkeypatch, "google_genai:gemini-test")
-    monkeypatch.setattr(video_llm, "get_llm", lambda: model)
+    monkeypatch.setattr(video_llm, "get_video_llm", lambda: model)
     monkeypatch.setattr(
         video_llm,
         "_uploaded",
@@ -43,6 +45,21 @@ def test_analyze_video_sends_uploaded_video_and_returns_both_channels(monkeypatc
     [message] = model.messages
     assert isinstance(message, HumanMessage)
     assert message.content[1] == {"type": "media", "file_uri": "files/abc", "mime_type": "video/mp4"}
+
+
+def test_falls_back_to_claimlens_model_when_video_model_is_unset(monkeypatch, tmp_path):
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"x")
+    model = FakeModel({"transcript": "t", "on_screen_text": ""})
+    use_model(monkeypatch, None, claimlens_model="google_genai:gemini-test")
+    monkeypatch.setattr(video_llm, "get_video_llm", lambda: model)
+    monkeypatch.setattr(
+        video_llm,
+        "_uploaded",
+        contextlib.contextmanager(lambda path: (yield SimpleNamespace(uri="files/abc"))),
+    )
+
+    assert video_llm.analyze_video(video).transcript == "t"
 
 
 def test_non_gemini_model_is_rejected(monkeypatch, tmp_path):

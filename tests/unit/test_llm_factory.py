@@ -1,4 +1,4 @@
-"""VERIFY_MODEL and EXTRACT_MODEL pick per-task models and fall back to CLAIMLENS_MODEL."""
+"""VERIFY_MODEL, EXTRACT_MODEL and VIDEO_MODEL pick per-task models; each falls back to CLAIMLENS_MODEL."""
 
 import pytest
 
@@ -20,7 +20,8 @@ def chosen(monkeypatch):
 def use(monkeypatch, **values):
     # Explicit values so model settings loaded into os.environ by other tests don't leak in.
     unset = dict.fromkeys(
-        ["verify_model", "verify_temperature", "extract_model", "extract_temperature"]
+        ["verify_model", "verify_temperature", "extract_model", "extract_temperature",
+         "video_model", "video_temperature"]
     )
     settings = Settings(_env_file=None, **{**unset, **values})
     monkeypatch.setattr(factory, "get_settings", lambda: settings)
@@ -45,6 +46,12 @@ def test_extract_llm_uses_extract_model_when_set(monkeypatch, chosen):
     factory.get_extract_llm()
     factory.get_verify_llm()
     assert chosen == [("openai:big", "default"), ("openai:small", 0)]
+
+
+def test_video_llm_uses_video_model_when_set(monkeypatch, chosen):
+    use(monkeypatch, claimlens_model="openai:small", video_model="google_genai:gemini", llm_temperature=0)
+    factory.get_video_llm()
+    assert chosen == [("google_genai:gemini", "default")]
 
 
 def test_verify_llm_falls_back_to_claimlens_model(monkeypatch, chosen):
