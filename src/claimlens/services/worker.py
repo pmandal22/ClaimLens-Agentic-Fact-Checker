@@ -5,12 +5,13 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 from claimlens.ingest.download import download_video
 from claimlens.services import results
-from claimlens.services.jobs import Job, JobNotFoundError, JobStatus, JobStore
-from claimlens.services.queue import JobQueue
+from claimlens.services.jobs import IN_PROGRESS, Job, JobNotFoundError, JobStatus, JobStore
+from claimlens.services.queue import JobQueue, Message
 from claimlens.services.storage import Storage
 
 logger = logging.getLogger(__name__)
@@ -71,16 +72,40 @@ def process_job(
 
 
 def _heartbeat_loop(
-    store: JobStore, job_id: str, worker_id: str, lease_seconds: int, done: threading.Event
+    store: JobStore,
+    queue: JobQueue,
+    message: Message,
+    worker_id: str | None,
+    lease_seconds: int,
+    done: threading.Event,
+    lost: threading.Event,
 ) -> None:
-    """Extend the job's claim lease about every lease_seconds/2 until `done` is set."""
+    """Every lease_seconds/2 until `done`, tell Redis and the DB this job is still being worked on.
+
+    Redis only sees the message's idle time, so without this a job slower than the reclaim
+    window would be handed to a second worker while the first is still running it.
+    Sets `lost` and stops if another worker has taken the job over.
+    """
     interval = max(lease_seconds / 2, 1)
     while not done.wait(interval):
         try:
-            if not store.heartbeat(job_id, worker_id, lease_seconds):
-                return  # we no longer own the job
+            still_ours = queue.touch(message)
+            if worker_id:
+                still_ours = store.heartbeat(message.job_id, worker_id, lease_seconds) and still_ours
         except Exception:
-            logger.exception("job=%s heartbeat failed", job_id)
+            # Redis or the DB is briefly unreachable; try again next interval.
+            logger.exception("job=%s heartbeat failed", message.job_id)
+            continue
+        if not still_ours:
+            logger.warning("job=%s was taken over by another worker", message.job_id)
+            lost.set()
+            return
+
+
+def _lease_is_active(job: Job) -> bool:
+    if job.status not in IN_PROGRESS or job.claim_expires_at is None:
+        return False
+    return datetime.fromisoformat(job.claim_expires_at) > datetime.now(UTC)
 
 
 def run_once(
@@ -98,13 +123,20 @@ def run_once(
         return False
 
     try:
-        store.get(message.job_id)
+        previous = store.get(message.job_id)
     except JobNotFoundError:
         logger.warning("dropping message for unknown job=%s", message.job_id)
         queue.ack(message)
         return True
 
-    # A redelivered message means a previous worker died mid-job, so allow re-claiming it.
+    if message.redelivered:
+        logger.warning(
+            "job=%s redelivered; previous worker=%s status=%s lease_expires=%s",
+            previous.id, previous.claimed_by, previous.status, previous.claim_expires_at,
+        )
+
+    # A redelivered message means a previous worker died mid-job, so allow re-claiming it
+    # once that worker's lease has run out. The job restarts from the download step.
     job = store.claim(
         message.job_id,
         resume=message.redelivered,
@@ -112,26 +144,33 @@ def run_once(
         lease_seconds=lease_seconds,
     )
     if job is None:
+        if message.redelivered and _lease_is_active(store.get(message.job_id)):
+            # The previous worker is still heartbeating the DB. Leave the message pending so
+            # it is retried after another reclaim window, in case that worker dies after all.
+            logger.info("job=%s still leased by another worker, leaving it pending", message.job_id)
+            return True
         # Already claimed or finished: this is a duplicate message.
         logger.info("job=%s not claimable, dropping duplicate message", message.job_id)
         queue.ack(message)
         return True
 
     done = threading.Event()
-    heartbeat = None
-    if worker_id:
-        heartbeat = threading.Thread(
-            target=_heartbeat_loop,
-            args=(store, job.id, worker_id, lease_seconds, done),
-            daemon=True,
-        )
-        heartbeat.start()
+    lost = threading.Event()
+    heartbeat = threading.Thread(
+        target=_heartbeat_loop,
+        args=(store, queue, message, worker_id, lease_seconds, done, lost),
+        daemon=True,
+    )
+    heartbeat.start()
     try:
         process_job(job, store, storage, downloader)
     finally:
         done.set()
-        if heartbeat:
-            heartbeat.join(timeout=5)
+        heartbeat.join(timeout=5)
+    if lost.is_set():
+        # Another worker owns the message now; acking would delete it out from under them.
+        logger.warning("job=%s finished after takeover; not acknowledging", job.id)
+        return True
     # Ack only after processing; if we crash before this, another worker gets the message.
     queue.ack(message)
     return True

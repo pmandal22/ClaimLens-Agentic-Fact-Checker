@@ -1,3 +1,5 @@
+import time
+
 import fakeredis
 import pytest
 
@@ -78,3 +80,54 @@ def test_message_is_not_reclaimed_before_the_idle_timeout(client):
 def test_creating_a_queue_twice_does_not_fail(client):
     make_queue(client)
     make_queue(client, consumer="worker-2")
+
+
+def test_touch_stops_a_slow_worker_losing_its_message(client):
+    slow = make_queue(client, consumer="worker-1", reclaim_after_ms=50)
+    slow.enqueue("job-a")
+    message = slow.receive(block_ms=1)
+    assert message is not None
+    time.sleep(0.1)  # now idle long enough to be reclaimed
+
+    assert slow.touch(message) is True
+
+    other = make_queue(client, consumer="worker-2", reclaim_after_ms=50)
+    assert other.receive(block_ms=1) is None
+
+
+def test_touch_reports_a_message_taken_by_another_worker(client):
+    first = make_queue(client, consumer="worker-1", reclaim_after_ms=0)
+    first.enqueue("job-a")
+    message = first.receive(block_ms=1)
+    assert message is not None
+    assert make_queue(client, consumer="worker-2", reclaim_after_ms=0).receive(block_ms=1)
+
+    assert first.touch(message) is False
+    pending = client.xpending_range("claimlens:jobs", "workers", min=message.id, max=message.id, count=1)
+    assert pending[0]["consumer"] == "worker-2"  # touch must not steal it back
+
+
+def test_touch_after_ack_returns_false(client):
+    queue = make_queue(client)
+    queue.enqueue("job-a")
+    message = queue.receive(block_ms=1)
+    assert message is not None
+    queue.ack(message)
+
+    assert queue.touch(message) is False
+
+
+def test_prune_removes_only_idle_consumers_with_nothing_pending(client):
+    gone = make_queue(client, consumer="gone")
+    busy = make_queue(client, consumer="busy")
+    gone.receive(block_ms=1)  # registers the consumer, receives nothing
+    busy.enqueue("job-a")
+    assert busy.receive(block_ms=1) is not None  # still pending: must survive
+    me = make_queue(client, consumer="me")
+    me.receive(block_ms=1)
+
+    removed = me.prune_consumers(idle_ms=0)
+
+    assert removed == ["gone"]
+    names = {c["name"] for c in client.xinfo_consumers("claimlens:jobs", "workers")}
+    assert names == {"busy", "me"}

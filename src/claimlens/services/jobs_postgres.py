@@ -9,6 +9,7 @@ from psycopg.rows import dict_row
 
 from claimlens.services.jobs import (
     ALLOWED_TRANSITIONS,
+    IN_PROGRESS,
     InvalidTransitionError,
     Job,
     JobNotFoundError,
@@ -42,6 +43,8 @@ def _to_job(row: dict[str, Any]) -> Job:
         error=row["error"],
         created_at=row["created_at"].isoformat(),
         updated_at=row["updated_at"].isoformat(),
+        claimed_by=row["claimed_by"],
+        claim_expires_at=row["claim_expires_at"].isoformat() if row["claim_expires_at"] else None,
     )
 
 
@@ -93,17 +96,29 @@ class PostgresJobStore:
         return _to_job(row)
 
     def claim(self, job_id: str, resume: bool = False, worker_id: str | None = None, lease_seconds: int = 900) -> Job | None:
-        """Atomically move a queued job to DOWNLOADING and set a claim lease."""
-        claimable = [JobStatus.QUEUED.value]
-        if resume:
-            claimable.append(JobStatus.DOWNLOADING.value)
+        """Atomically move a queued job to DOWNLOADING and set a claim lease.
+
+        resume=True also takes a job a dead worker left in progress, once its lease has run out.
+        """
         with self._connect() as conn:
             now = datetime.now(UTC)
             expires = (now + timedelta(seconds=lease_seconds)) if worker_id else None
+            # A NULL lease means no worker id was given, so there is nothing to wait for.
+            condition = (
+                "(status = %s OR (status = ANY(%s) "
+                "AND (claim_expires_at IS NULL OR claim_expires_at < %s)))"
+                if resume
+                else "status = %s"
+            )
+            params = (
+                (JobStatus.QUEUED.value, [status.value for status in IN_PROGRESS], now)
+                if resume
+                else (JobStatus.QUEUED.value,)
+            )
             row = conn.execute(
                 "UPDATE jobs SET status = %s, updated_at = %s, claimed_by = %s, claim_expires_at = %s "
-                "WHERE id = %s AND status = ANY(%s) RETURNING *",
-                (JobStatus.DOWNLOADING.value, now, worker_id, expires, job_id, claimable),
+                f"WHERE id = %s AND {condition} RETURNING *",
+                (JobStatus.DOWNLOADING.value, now, worker_id, expires, job_id, *params),
             ).fetchone()
         return _to_job(row) if row else None
 
