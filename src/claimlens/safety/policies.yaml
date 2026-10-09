@@ -1,0 +1,6 @@
+# Claim categories (see Category in domain/schemas.py) whose verdicts always go to human
+# review, however confident the model is. Elections fall under "politics".
+# Claims about named private individuals aren't detected yet.
+always_review_categories:
+  - health
+  - politics

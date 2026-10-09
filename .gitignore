@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+claimlens.db*
+uploads/
+evals/datasets/.evidence_cache.json
+.DS_Store
+data/
+node_modules/

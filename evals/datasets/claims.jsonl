@@ -1,0 +1,24 @@
+{"id": "e1", "text": "Vitamin C prevents the common cold in the general population.", "category": "health", "search_terms": "vitamin C common cold prevention", "expected": "refuted", "india_related": false}
+{"id": "e2", "text": "Vaccines cause autism.", "category": "health", "search_terms": "vaccines autism", "expected": "refuted", "india_related": false}
+{"id": "e3", "text": "Regular physical activity reduces the risk of cardiovascular disease.", "category": "health", "search_terms": "exercise cardiovascular disease risk", "expected": "supported", "india_related": false}
+{"id": "e4", "text": "Antibiotics are effective against viral infections such as the flu.", "category": "health", "search_terms": "antibiotics viral infections", "expected": "refuted", "india_related": false}
+{"id": "e5", "text": "Smoking tobacco increases the risk of lung cancer.", "category": "health", "search_terms": "smoking lung cancer risk", "expected": "supported", "india_related": false}
+{"id": "e6", "text": "Humans only use 10 percent of their brains.", "category": "health", "search_terms": "ten percent brain myth", "expected": "refuted", "india_related": false}
+{"id": "e7", "text": "Cracking your knuckles causes arthritis.", "category": "health", "search_terms": "knuckle cracking arthritis", "expected": "refuted", "india_related": false}
+{"id": "e8", "text": "Drinking eight glasses of water a day is required for good health.", "category": "health", "search_terms": "eight glasses water a day", "expected": "misleading", "india_related": false}
+{"id": "e9", "text": "Humans have a tail-like structure during embryonic development.", "category": "science", "search_terms": "human embryo tail", "expected": "supported", "india_related": false}
+{"id": "e10", "text": "The Great Wall of China is visible to the naked eye from the Moon.", "category": "science", "search_terms": "Great Wall visible from space", "expected": "refuted", "india_related": false}
+{"id": "e11", "text": "Water boils at 100 degrees Celsius at sea level.", "category": "science", "search_terms": "boiling point of water sea level", "expected": "supported", "india_related": false}
+{"id": "e12", "text": "Lightning never strikes the same place twice.", "category": "science", "search_terms": "lightning strikes same place twice", "expected": "refuted", "india_related": false}
+{"id": "e13", "text": "The Sun is a star.", "category": "science", "search_terms": "Sun star", "expected": "supported", "india_related": false}
+{"id": "e14", "text": "Bats are blind.", "category": "science", "search_terms": "bats blind vision", "expected": "refuted", "india_related": false}
+{"id": "e15", "text": "Goldfish have a three-second memory.", "category": "science", "search_terms": "goldfish memory", "expected": "refuted", "india_related": false}
+{"id": "e16", "text": "The Berlin Wall fell in 1989.", "category": "history", "search_terms": "fall of the Berlin Wall 1989", "expected": "supported", "india_related": false}
+{"id": "e17", "text": "Napoleon Bonaparte was unusually short for his time.", "category": "history", "search_terms": "Napoleon height", "expected": "refuted", "india_related": false}
+{"id": "e18", "text": "India gained independence from British rule in 1947.", "category": "history", "search_terms": "India independence 1947", "expected": "supported", "india_related": true}
+{"id": "e19", "text": "Vikings wore horned helmets in battle.", "category": "history", "search_terms": "Viking horned helmets", "expected": "refuted", "india_related": false}
+{"id": "e20", "text": "The first iPhone was released in 2007.", "category": "technology", "search_terms": "first iPhone release 2007", "expected": "supported", "india_related": false}
+{"id": "e21", "text": "5G networks spread COVID-19.", "category": "technology", "search_terms": "5G COVID-19", "expected": "refuted", "india_related": false}
+{"id": "e22", "text": "The Reserve Bank of India sets the repo rate.", "category": "economy", "search_terms": "RBI repo rate", "expected": "supported", "india_related": true}
+{"id": "e23", "text": "The 2011 Cricket World Cup was won by India.", "category": "sports", "search_terms": "2011 Cricket World Cup winner", "expected": "supported", "india_related": true}
+{"id": "e24", "text": "A specific unnamed neighbour of the speaker lost their keys last Tuesday.", "category": "general", "search_terms": "neighbour lost keys", "expected": "nei", "india_related": false}

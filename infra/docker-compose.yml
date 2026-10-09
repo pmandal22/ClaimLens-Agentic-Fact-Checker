@@ -1,0 +1,94 @@
+# Local development stack: postgres, redis, api and worker.
+# Run from the project root:  docker compose -f infra/docker-compose.yml up -d --build
+services:
+  postgres:
+    build:
+      context: ..
+      dockerfile: infra/docker/postgres.Dockerfile
+    image: claimlens-postgres:local
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-claimlens}
+      # Local-only default; set a real value in .env for anything shared.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-claimlens}
+      POSTGRES_DB: ${POSTGRES_DB:-claimlens}
+    ports:
+      # Bound to localhost only, so other machines on your network can't connect.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # appendonly keeps queued jobs across a restart; without it they live only in memory.
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/docker/api.Dockerfile
+    image: claimlens-api:local
+    restart: unless-stopped
+    # Model, API keys and tuning settings come from the root .env (local development only;
+    # in the cloud they come from Secret Manager). Optional, so compose still starts without it.
+    env_file: &env-file
+      - path: ../.env
+        required: false
+    # Values here override .env: inside the compose network, services reach each other by
+    # service name, not the localhost addresses .env may hold for running outside Docker.
+    environment: &app-env
+      POSTGRES_URL: postgresql://${POSTGRES_USER:-claimlens}:${POSTGRES_PASSWORD:-claimlens}@postgres:5432/${POSTGRES_DB:-claimlens}
+      REDIS_URL: redis://redis:6379/0
+      LOCAL_STORAGE_DIR: /data/storage
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    volumes:
+      # Same volume as the worker: the API reads the results the worker writes there.
+      - video_data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # No ports and no container_name, so you can run many copies. Set WORKER_COUNT in .env
+  # and start with `make up`; `--scale worker=N` on the command line overrides it.
+  worker:
+    deploy:
+      replicas: ${WORKER_COUNT:-1}
+    build:
+      context: ..
+      dockerfile: infra/docker/worker.Dockerfile
+    image: claimlens-worker:local
+    restart: unless-stopped
+    env_file: *env-file
+    # Don't add model or key entries here: they would override .env, even with an empty value.
+    environment: *app-env
+    volumes:
+      # Local-disk video storage shared by all workers. In the cloud, set GCS_BUCKET instead.
+      - video_data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  video_data:
