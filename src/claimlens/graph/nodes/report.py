@@ -11,6 +11,13 @@ LABEL_TEXT = {
     "misleading": "Misleading",
     "nei": "Not enough evidence",
 }
+# The overall rating "misleading" means mostly false claims, not the claim label "misleading".
+RATING_TEXT = {
+    "mostly_supported": "Mostly supported",
+    "mixed": "Contains false claims",
+    "misleading": "Mostly false",
+    "inconclusive": "Inconclusive",
+}
 DISCLAIMER = (
     "Verdicts are automated and may be wrong. They rate the claims, not the person making "
     "them; follow the sources to check the reasoning."
@@ -26,7 +33,7 @@ def render_report(
     """Markdown report: overall rating, then each claim with its verdict and citations."""
     titles = {e.url: e.title for items in evidence.values() for e in items}
     lines = [
-        f"# Overall: {overall.rating.replace('_', ' ')}",
+        f"# Overall: {RATING_TEXT[overall.rating]}",
         "",
         overall.summary,
         "",

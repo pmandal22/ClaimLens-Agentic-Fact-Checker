@@ -25,8 +25,9 @@ export const LABEL_KEYS = Object.keys(LABELS) as Label[];
 
 export const RATINGS: Record<Rating, { text: string; tone: Tone }> = {
   mostly_supported: { text: "Mostly supported", tone: "green" },
-  mixed: { text: "Mixed", tone: "orange" },
-  misleading: { text: "Misleading", tone: "red" },
+  mixed: { text: "Contains false claims", tone: "orange" },
+  // The API calls a mostly false reel "misleading"; the claim label of that name means something else.
+  misleading: { text: "Mostly false", tone: "red" },
   inconclusive: { text: "Inconclusive", tone: "gray" },
 };
 
