@@ -88,13 +88,41 @@ def test_claim_resume_accepts_a_job_stuck_in_downloading(store: JobStore):
     assert resumed and resumed.status == JobStatus.DOWNLOADING
 
 
-def test_claim_resume_does_not_touch_finished_jobs(store: JobStore):
+@pytest.mark.parametrize("stuck_in", [JobStatus.INGESTING, JobStatus.VERIFYING])
+def test_claim_resume_restarts_a_job_stuck_after_download(store: JobStore, stuck_in):
     job = store.create(URL)
-    store.claim(job.id)
+    store.claim(job.id, worker_id="dead-worker", lease_seconds=-1)
+    store.set_status(job.id, JobStatus.INGESTING)
+    if stuck_in == JobStatus.VERIFYING:
+        store.set_status(job.id, JobStatus.VERIFYING)
+
+    resumed = store.claim(job.id, resume=True, worker_id="worker-2")
+
+    assert resumed and resumed.status == JobStatus.DOWNLOADING
+    assert resumed.claimed_by == "worker-2"
+
+
+def test_claim_resume_waits_for_an_active_lease_after_download(store: JobStore):
+    job = store.create(URL)
+    store.claim(job.id, worker_id="slow-worker", lease_seconds=900)
     store.set_status(job.id, JobStatus.INGESTING)
 
-    assert store.claim(job.id, resume=True) is None
+    assert store.claim(job.id, resume=True, worker_id="worker-2") is None
     assert store.get(job.id).status == JobStatus.INGESTING
+
+
+@pytest.mark.parametrize("final", [JobStatus.DONE, JobStatus.NEEDS_REVIEW, JobStatus.FAILED])
+def test_claim_resume_does_not_touch_finished_jobs(store: JobStore, final):
+    job = store.create(URL)
+    store.claim(job.id, worker_id="worker-1", lease_seconds=-1)
+    if final == JobStatus.FAILED:
+        store.set_status(job.id, JobStatus.FAILED, error="boom")
+    else:
+        for status in (JobStatus.INGESTING, JobStatus.VERIFYING, final):
+            store.set_status(job.id, status)
+
+    assert store.claim(job.id, resume=True, worker_id="worker-2") is None
+    assert store.get(job.id).status == final
 
 
 def test_full_happy_path(store: JobStore):
@@ -134,3 +162,28 @@ def test_concurrent_claims_have_exactly_one_winner(store: JobStore):
         results = list(pool.map(lambda _: store.claim(job.id), range(16)))
 
     assert sum(r is not None for r in results) == 1
+
+
+def test_claim_records_the_worker_and_its_lease(store: JobStore):
+    job = store.create(URL)
+
+    claimed = store.claim(job.id, worker_id="worker-1", lease_seconds=900)
+
+    assert claimed and claimed.claimed_by == "worker-1" and claimed.claim_expires_at
+
+
+def test_claim_resume_waits_for_an_active_lease(store: JobStore):
+    job = store.create(URL)
+    store.claim(job.id, worker_id="slow-worker", lease_seconds=900)
+
+    assert store.claim(job.id, resume=True, worker_id="worker-2") is None
+    assert store.get(job.id).claimed_by == "slow-worker"
+
+
+def test_claim_resume_takes_over_an_expired_lease(store: JobStore):
+    job = store.create(URL)
+    store.claim(job.id, worker_id="dead-worker", lease_seconds=-1)
+
+    resumed = store.claim(job.id, resume=True, worker_id="worker-2")
+
+    assert resumed and resumed.claimed_by == "worker-2"

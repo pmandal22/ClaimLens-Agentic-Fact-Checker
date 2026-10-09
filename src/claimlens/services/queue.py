@@ -24,6 +24,10 @@ class JobQueue(Protocol):
 
     def ack(self, message: Message) -> None: ...
 
+    def touch(self, message: Message) -> bool: ...
+
+    def prune_consumers(self, idle_ms: int) -> list[str]: ...
+
 
 class RedisStreamQueue:
     """A Redis Stream read through a consumer group.
@@ -49,6 +53,10 @@ class RedisStreamQueue:
         self._consumer = consumer or f"{socket.gethostname()}-{os.getpid()}"
         self._reclaim_after_ms = reclaim_after_ms
         self._ensure_group()
+
+    @property
+    def consumer(self) -> str:
+        return self._consumer
 
     def _ensure_group(self) -> None:
         from redis.exceptions import ResponseError
@@ -92,15 +100,51 @@ class RedisStreamQueue:
         # Acknowledged messages are no longer needed; deleting stops the stream growing forever.
         self._client.xdel(self._stream, message.id)
 
+    def touch(self, message: Message) -> bool:
+        """Reset the message's idle time so other workers don't reclaim it while we work.
+
+        Returns False if the message is no longer ours: already acked, or reclaimed by
+        another worker after we went quiet for too long.
+        """
+        pending = self._client.xpending_range(
+            self._stream, self._group, min=message.id, max=message.id, count=1
+        )
+        if not pending or pending[0]["consumer"] != self._consumer:
+            return False
+        # XCLAIM to ourselves with min_idle_time=0 changes nothing except the idle timer.
+        # Another worker can't take it between the check and this call: it is not idle.
+        claimed = self._client.xclaim(
+            self._stream, self._group, self._consumer,
+            min_idle_time=0, message_ids=[message.id], justid=True,
+        )
+        return bool(claimed)
+
+    def prune_consumers(self, idle_ms: int) -> list[str]:
+        """Remove consumers left behind by dead workers. Returns the names removed.
+
+        Only consumers with nothing pending are removed: deleting one that still holds
+        messages would drop those messages from the pending list, and they'd never be retried.
+        """
+        removed = []
+        for info in self._client.xinfo_consumers(self._stream, self._group):
+            name = info["name"]
+            if name != self._consumer and info["pending"] == 0 and info["idle"] >= idle_ms:
+                self._client.xgroup_delconsumer(self._stream, self._group, name)
+                removed.append(name)
+        return removed
+
     @staticmethod
     def _to_message(entry: tuple[str, dict[str, str]], redelivered: bool) -> Message:
         message_id, fields = entry
         return Message(id=message_id, job_id=fields[JOB_ID_FIELD], redelivered=redelivered)
 
 
-def get_queue() -> JobQueue:
+def get_queue(consumer: str | None = None) -> JobQueue:
+    """consumer names this process in Redis; workers pass their worker id so logs match the DB."""
     import redis
 
     settings = get_settings()
     client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
-    return RedisStreamQueue(client, reclaim_after_ms=settings.queue_reclaim_after_s * 1000)
+    return RedisStreamQueue(
+        client, consumer=consumer, reclaim_after_ms=settings.queue_reclaim_after_s * 1000
+    )

@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 import fakeredis
@@ -221,3 +222,59 @@ def test_flagged_verdicts_park_the_job_for_review(store, storage, queue, monkeyp
     run(store, storage, queue)
 
     assert store.get(job.id).status == JobStatus.NEEDS_REVIEW
+
+
+def test_redelivered_job_with_active_lease_is_left_pending(store, storage, queue, client):
+    job = submit_check(URL, store, queue)
+    assert queue.receive(block_ms=1) is not None
+    store.claim(job.id, worker_id="worker-1", lease_seconds=900)  # still heartbeating
+
+    worker_2 = RedisStreamQueue(client, consumer="worker-2", reclaim_after_ms=0)
+    run_once(store, storage, worker_2, failing_downloader, block_ms=1, worker_id="worker-2")
+
+    assert store.get(job.id).status == JobStatus.DOWNLOADING
+    assert store.get(job.id).claimed_by == "worker-1"
+    assert client.xlen("claimlens:jobs") == 1  # not acked: retried if worker-1 dies after all
+
+
+def test_redelivered_job_with_expired_lease_is_taken_over(store, storage, queue, client):
+    job = submit_check(URL, store, queue)
+    assert queue.receive(block_ms=1) is not None
+    store.claim(job.id, worker_id="worker-1", lease_seconds=-1)  # stopped heartbeating
+
+    worker_2 = RedisStreamQueue(client, consumer="worker-2", reclaim_after_ms=0)
+    run_once(store, storage, worker_2, fake_downloader, block_ms=1, worker_id="worker-2")
+
+    assert store.get(job.id).status == JobStatus.DONE
+    assert client.xlen("claimlens:jobs") == 0
+
+
+def test_worker_that_lost_its_job_does_not_ack_it(store, storage, client):
+    slow = RedisStreamQueue(client, consumer="worker-1", reclaim_after_ms=0)
+    other = RedisStreamQueue(client, consumer="worker-2", reclaim_after_ms=0)
+    submit_check(URL, store, slow)
+
+    def downloader_that_gets_overtaken(url: str, destination: Path) -> Path:
+        assert other.receive(block_ms=1) is not None  # worker-2 reclaims the message
+        time.sleep(1.3)  # long enough for one heartbeat (lease 2s -> every 1s)
+        return fake_downloader(url, destination)
+
+    run_once(store, storage, slow, downloader_that_gets_overtaken, block_ms=1, lease_seconds=2)
+
+    assert client.xlen("claimlens:jobs") == 1  # worker-2's message survives
+    pending = client.xpending_range("claimlens:jobs", "workers", min="-", max="+", count=10)
+    assert [p["consumer"] for p in pending] == ["worker-2"]
+
+
+def test_job_abandoned_while_ingesting_is_restarted_and_finishes(store, storage, queue, client):
+    job = submit_check(URL, store, queue)
+    assert queue.receive(block_ms=1) is not None
+    # Worker 1 downloaded the video and started ingesting, then died.
+    store.claim(job.id, worker_id="worker-1", lease_seconds=-1)
+    store.set_status(job.id, JobStatus.INGESTING)
+
+    worker_2 = RedisStreamQueue(client, consumer="worker-2", reclaim_after_ms=0)
+    run_once(store, storage, worker_2, fake_downloader, block_ms=1, worker_id="worker-2")
+
+    assert store.get(job.id).status == JobStatus.DONE
+    assert client.xlen("claimlens:jobs") == 0

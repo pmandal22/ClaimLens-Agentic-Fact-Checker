@@ -34,6 +34,10 @@ ALLOWED_TRANSITIONS: dict[JobStatus, set[JobStatus]] = {
     JobStatus.FAILED: {JobStatus.QUEUED},
 }
 
+# A worker is running these. If it dies, the job is taken over from the start once its lease
+# runs out; that is safe because every pipeline step overwrites its own per-job artifacts.
+IN_PROGRESS = (JobStatus.DOWNLOADING, JobStatus.INGESTING, JobStatus.VERIFYING)
+
 
 @dataclass(frozen=True)
 class Job:
@@ -44,6 +48,8 @@ class Job:
     error: str | None
     created_at: str
     updated_at: str
+    claimed_by: str | None = None  # worker id holding the job while it runs
+    claim_expires_at: str | None = None  # when that worker's lease runs out without a heartbeat
 
 
 class JobNotFoundError(KeyError):
@@ -96,6 +102,8 @@ def _to_job(row: sqlite3.Row) -> Job:
         error=row["error"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        claimed_by=row["claimed_by"],
+        claim_expires_at=row["claim_expires_at"],
     )
 
 
@@ -168,25 +176,34 @@ class SQLiteJobStore:
 
         If worker_id is provided, the job's claimed_by and claim_expires_at fields are set so
         other workers can reclaim after the lease expires. resume=True allows re-claiming a
-        previously-downloading job (redelivery).
+        job a dead worker left in progress (redelivery), but only once its lease has run out,
+        so a slow worker that is still heartbeating keeps its job.
         """
-        claimable = [JobStatus.QUEUED, *([JobStatus.DOWNLOADING] if resume else [])]
-        placeholders = ", ".join("?" for _ in claimable)
         conn = self._connect()
         try:
             now = _now()
             expires = (datetime.now(UTC) + timedelta(seconds=lease_seconds)).isoformat()
+            # A lease of NULL means no worker id was given, so there is nothing to wait for.
+            # Timestamps are all UTC isoformat strings, so comparing them as text is correct.
+            in_progress = ", ".join("?" for _ in IN_PROGRESS)
+            condition = (
+                f"(status = ? OR (status IN ({in_progress}) "
+                "AND (claim_expires_at IS NULL OR claim_expires_at < ?)))"
+                if resume
+                else "status = ?"
+            )
+            params = (JobStatus.QUEUED, *IN_PROGRESS, now) if resume else (JobStatus.QUEUED,)
             if worker_id:
                 row = conn.execute(
                     f"UPDATE jobs SET status = ?, updated_at = ?, claimed_by = ?, claim_expires_at = ? "
-                    f"WHERE id = ? AND status IN ({placeholders}) RETURNING *",
-                    (JobStatus.DOWNLOADING, now, worker_id, expires, job_id, *claimable),
+                    f"WHERE id = ? AND {condition} RETURNING *",
+                    (JobStatus.DOWNLOADING, now, worker_id, expires, job_id, *params),
                 ).fetchone()
             else:
                 row = conn.execute(
-                    f"UPDATE jobs SET status = ?, updated_at = ? "
-                    f"WHERE id = ? AND status IN ({placeholders}) RETURNING *",
-                    (JobStatus.DOWNLOADING, now, job_id, *claimable),
+                    f"UPDATE jobs SET status = ?, updated_at = ?, claimed_by = NULL, claim_expires_at = NULL "
+                    f"WHERE id = ? AND {condition} RETURNING *",
+                    (JobStatus.DOWNLOADING, now, job_id, *params),
                 ).fetchone()
         finally:
             conn.close()
