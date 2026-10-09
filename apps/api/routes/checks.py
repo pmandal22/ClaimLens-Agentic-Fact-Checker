@@ -5,11 +5,14 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Command
 from redis.exceptions import RedisError
 
-from apps.api.deps import job_queue, job_store, require_reviewer, storage
+from apps.api.deps import job_queue, job_store, reel_graph, require_reviewer, storage
 from apps.api.dto import CheckRequest, CheckResponse, ReviewRequest
 from claimlens.domain.schemas import Review
+from claimlens.graph.main_graph import thread_config
 from claimlens.ingest.download import ensure_public_url
 from claimlens.services.jobs import (
     InvalidTransitionError,
@@ -19,7 +22,7 @@ from claimlens.services.jobs import (
     JobStore,
 )
 from claimlens.services.queue import JobQueue
-from claimlens.services.results import ClaimResult, load_results, save_review
+from claimlens.services.results import ClaimResult, load_results, save_review, save_run
 from claimlens.services.storage import Storage
 from claimlens.services.submit import submit_check
 
@@ -28,6 +31,7 @@ router = APIRouter(prefix="/checks", tags=["checks"])
 Store = Annotated[JobStore, Depends(job_store)]
 Queue = Annotated[JobQueue, Depends(job_queue)]
 ResultStorage = Annotated[Storage, Depends(storage)]
+Graph = Annotated[CompiledStateGraph, Depends(reel_graph)]
 
 # Statuses whose claims and verdicts are in storage.
 HAS_RESULTS = {JobStatus.DONE, JobStatus.NEEDS_REVIEW}
@@ -45,6 +49,16 @@ def _load(storage: Storage, job_id: str) -> list[ClaimResult]:
         return load_results(storage, job_id)
     except FileNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Results not found") from exc
+
+
+def _resume(graph: CompiledStateGraph, storage: Storage, job_id: str, review: Review) -> None:
+    """Finish the job's graph run, paused at human_review, and store its report."""
+    config = thread_config(job_id)
+    if graph.get_state(config).next != ("human_review",):
+        # Paused before the worker ran the graph: there is no run, and the review file alone
+        # publishes the reviewer's labels.
+        return
+    save_run(storage, job_id, graph.invoke(Command(resume=review), config))
 
 
 # Plain `def` (not `async def`): FastAPI runs it in a thread pool, so the blocking
@@ -81,9 +95,9 @@ def get_check(job_id: str, store: Store, storage: ResultStorage) -> CheckRespons
     dependencies=[Depends(require_reviewer)],
 )
 def review_check(
-    job_id: str, body: ReviewRequest, store: Store, storage: ResultStorage
+    job_id: str, body: ReviewRequest, store: Store, storage: ResultStorage, graph: Graph
 ) -> CheckResponse:
-    """Record a reviewer's labels for a paused check and publish it."""
+    """Record a reviewer's labels, resume the paused run, and publish it."""
     job = _get_job(store, job_id)
     if job.status != JobStatus.NEEDS_REVIEW:
         raise HTTPException(status.HTTP_409_CONFLICT, "This check is not waiting for review")
@@ -102,15 +116,18 @@ def review_check(
     if problems:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "; ".join(problems))
 
-    # Two reviewers submitting at once both get here; set_status lets only one move the job
-    # to DONE, but the other's file may already have replaced the winner's.
-    save_review(
-        storage,
-        job.id,
-        Review(decisions=body.decisions, reviewed_at=datetime.now(UTC).isoformat()),
-    )
+    review = Review(decisions=body.decisions, reviewed_at=datetime.now(UTC).isoformat())
+    # Moving off NEEDS_REVIEW claims the review: of two reviewers submitting at once, only one
+    # gets past this, and the other gets a 409.
     try:
-        job = store.set_status(job.id, JobStatus.DONE)
+        store.set_status(job.id, JobStatus.VERIFYING)
     except InvalidTransitionError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, "This check was reviewed already") from exc
+    try:
+        _resume(graph, storage, job.id, review)
+    except Exception:
+        store.set_status(job.id, JobStatus.NEEDS_REVIEW)  # still paused; the reviewer can retry
+        raise
+    save_review(storage, job.id, review)
+    job = store.set_status(job.id, JobStatus.DONE)
     return CheckResponse.from_job(job, _load(storage, job.id))

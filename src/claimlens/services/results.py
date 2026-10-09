@@ -1,14 +1,23 @@
-"""Load a finished job's claims, evidence, verdicts and human review from storage."""
+"""Save and load a job's claims, evidence, verdicts, report and human review in storage."""
 
 import json
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
 
 from claimlens.config.settings import get_settings
-from claimlens.domain.schemas import Claim, Evidence, Label, Review, Verdict
+from claimlens.domain.schemas import (
+    Claim,
+    Claims,
+    Evidence,
+    Label,
+    Review,
+    ReviewDecision,
+    Verdict,
+)
 from claimlens.safety.guards import review_reasons
 from claimlens.services.storage import Storage
 
@@ -38,26 +47,46 @@ def _read_json(storage: Storage, key: str) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
 
 
+def report_key(job_id: str) -> str:
+    return f"reports/{job_id}.md"
+
+
+def put_text(storage: Storage, key: str, text: str) -> None:
+    with tempfile.TemporaryDirectory(prefix="claimlens-artifact-") as tmp:
+        path = Path(tmp) / Path(key).name
+        path.write_text(text, encoding="utf-8")
+        storage.put_file(path, key)
+
+
 def save_review(storage: Storage, job_id: str, review: Review) -> None:
-    with tempfile.TemporaryDirectory(prefix="claimlens-review-") as tmp:
-        path = Path(tmp) / "review.json"
-        path.write_text(review.model_dump_json(indent=2), encoding="utf-8")
-        storage.put_file(path, review_key(job_id))
+    put_text(storage, review_key(job_id), review.model_dump_json(indent=2))
 
 
-def _apply_review(result: ClaimResult, label: Label, note: str) -> None:
+def save_run(storage: Storage, job_id: str, state: Mapping[str, Any]) -> None:
+    """Write a graph run's results under the keys load_results reads; idempotent.
+
+    The report is written only once the run has one (not while it waits for review).
+    """
+    claims = Claims(claims=state.get("claims", []))
+    evidence = {
+        claim_id: [e.model_dump() for e in items]
+        for claim_id, items in state.get("evidence", {}).items()
+    }
+    put_text(storage, f"claims/{job_id}.json", claims.model_dump_json(indent=2))
+    put_text(storage, f"evidence/{job_id}.json", json.dumps(evidence, indent=2))
+    put_text(
+        storage,
+        f"verdicts/{job_id}.json",
+        json.dumps([v.model_dump() for v in state.get("verdicts", [])], indent=2),
+    )
+    if report := state.get("report"):
+        put_text(storage, report_key(job_id), report)
+
+
+def _apply_review(result: ClaimResult, decision: ReviewDecision) -> None:
     verdict = result.verdict
-    result.review = HumanReview(model_label=verdict.label if verdict else None, note=note)
-    if verdict:
-        result.verdict = verdict.model_copy(update={"label": label})
-    else:
-        result.verdict = Verdict(
-            claim_id=result.claim.id,
-            label=label,
-            confidence=1.0,
-            rationale=note or "Labelled by a human reviewer.",
-            citations=[],
-        )
+    result.review = HumanReview(model_label=verdict.label if verdict else None, note=decision.note)
+    result.verdict = decision.apply_to(verdict)
 
 
 def load_results(
@@ -92,10 +121,6 @@ def load_results(
             review_reasons=review_reasons(claim, verdict, confidence_floor),
         )
         if decision := decisions.get(claim.id):
-            _apply_review(result, decision.label, decision.note)
+            _apply_review(result, decision)
         results.append(result)
     return results
-
-
-def needs_review(storage: Storage, job_id: str) -> bool:
-    return any(result.review_reasons for result in load_results(storage, job_id))

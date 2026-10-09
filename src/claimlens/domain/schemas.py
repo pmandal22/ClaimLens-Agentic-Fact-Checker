@@ -55,6 +55,18 @@ class ReviewDecision(BaseModel):
     label: Label
     note: str = Field(default="", max_length=1000)
 
+    def apply_to(self, verdict: Verdict | None) -> Verdict:
+        """The claim's published verdict: the reviewer's label replaces the model's."""
+        if verdict:
+            return verdict.model_copy(update={"label": self.label})
+        return Verdict(
+            claim_id=self.claim_id,
+            label=self.label,
+            confidence=1.0,
+            rationale=self.note or "Labelled by a human reviewer.",
+            citations=[],
+        )
+
 
 class Review(BaseModel):
     """Stored at reviews/{job_id}.json once a reviewer approves a paused check."""

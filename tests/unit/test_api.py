@@ -1,15 +1,21 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import fakeredis
 import pytest
 from fastapi.testclient import TestClient
+from langgraph.checkpoint.memory import InMemorySaver
 from redis.exceptions import ConnectionError as RedisConnectionError
 
-from apps.api.deps import job_queue, job_store, storage
+from apps.api.deps import job_queue, job_store, reel_graph, storage
 from apps.api.main import create_app
+from claimlens.domain.schemas import Claim, Verdict
+from claimlens.graph.checkpointer import make_serde
+from claimlens.graph.main_graph import build_graph, thread_config
 from claimlens.services.jobs import JobStatus, SQLiteJobStore
 from claimlens.services.queue import RedisStreamQueue
+from claimlens.services.results import save_run
 from claimlens.services.storage import LocalStorage
 
 URL = "https://example.com/reel"
@@ -43,6 +49,8 @@ def client(tmp_path: Path, redis_client, local_storage):
     app.dependency_overrides[job_store] = lambda: store
     app.dependency_overrides[job_queue] = lambda: queue
     app.dependency_overrides[storage] = lambda: local_storage
+    graph = build_graph(InMemorySaver(serde=make_serde()))
+    app.dependency_overrides[reel_graph] = lambda: graph
     return TestClient(app)
 
 
@@ -231,3 +239,61 @@ def test_review_token_is_enforced_when_set(client, local_storage, tmp_path, monk
         assert client.post(url, json=decisions, headers={"X-Review-Token": "s3cret"}).status_code == 200
     finally:
         get_settings.cache_clear()
+
+
+def pause_graph_run(client, local_storage, monkeypatch) -> str:
+    """A job whose real graph run stopped at human_review, as the worker leaves it."""
+    claim = Claim(id="c1", text="Garlic cures flu.", source="speech", category="health")
+    verdict = Verdict(
+        claim_id="c1", label="refuted", confidence=0.9, rationale="Trials.", citations=[]
+    )
+    monkeypatch.setattr("claimlens.ingest.pipeline.read_video_text", lambda v, w: ("s", "", []))
+    monkeypatch.setattr(
+        "claimlens.graph.nodes.extract_claims.extract_claims", lambda *a, **k: [claim]
+    )
+    monkeypatch.setattr(
+        "claimlens.graph.verify.subgraph.verify_claim",
+        SimpleNamespace(invoke=lambda state: {"verdicts": [verdict], "evidence": []}),
+    )
+    job_id = client.post("/checks", json={"url": URL}).json()["id"]
+    store = client.app.dependency_overrides[job_store]()
+    for step in (JobStatus.DOWNLOADING, JobStatus.INGESTING, JobStatus.VERIFYING,
+                 JobStatus.NEEDS_REVIEW):
+        store.set_status(job_id, step)
+    graph = client.app.dependency_overrides[reel_graph]()
+    graph.invoke({"video_path": "reel.mp4"}, thread_config(job_id))
+    save_run(local_storage, job_id, graph.get_state(thread_config(job_id)).values)
+    return job_id
+
+
+def test_review_resumes_the_paused_graph_run(client, local_storage, monkeypatch):
+    job_id = pause_graph_run(client, local_storage, monkeypatch)
+
+    response = client.post(f"/checks/{job_id}/review", json={"decisions": [
+        {"claim_id": "c1", "label": "misleading", "note": "Weak evidence."}]})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "done"
+    graph = client.app.dependency_overrides[reel_graph]()
+    state = graph.get_state(thread_config(job_id))
+    assert state.next == ()
+    assert state.values["review"].decisions[0].label == "misleading"
+    report = local_storage._path(f"reports/{job_id}.md").read_text()
+    assert "**Misleading**" in report
+
+
+def test_failed_resume_leaves_the_check_waiting_for_review(client, local_storage, monkeypatch):
+    job_id = pause_graph_run(client, local_storage, monkeypatch)
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("checkpoint database down")
+
+    graph = client.app.dependency_overrides[reel_graph]()
+    monkeypatch.setattr(graph, "invoke", broken)
+
+    with pytest.raises(RuntimeError):
+        client.post(f"/checks/{job_id}/review", json={"decisions": [
+            {"claim_id": "c1", "label": "misleading"}]})
+
+    assert client.get(f"/checks/{job_id}").json()["status"] == "needs_review"
+    assert not local_storage.exists(f"reviews/{job_id}.json")
