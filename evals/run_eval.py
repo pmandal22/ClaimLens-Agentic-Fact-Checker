@@ -89,12 +89,14 @@ def run_variant(rows: list[dict], evidence: dict[str, list[Evidence]]) -> list[d
     return results
 
 
-def summarize(results: list[dict], confidence_floor: float) -> dict:
+def summarize(results: list[dict], min_confidence_score: float) -> dict:
     n = len(results)
     answered = [r for r in results if r["label"] not in ("nei", "error")]
     answerable = [r for r in results if r["expected"] != "nei"]
     wrong_confident = [
-        r for r in answered if r["label"] != r["expected"] and r["confidence"] >= confidence_floor
+        r
+        for r in answered
+        if r["label"] != r["expected"] and r["confidence"] >= min_confidence_score
     ]
     return {
         "n": n,
@@ -157,7 +159,7 @@ def main() -> None:
     print(f"{len(rows)} claims; retrieving evidence (cached in {CACHE.name})")
     evidence = load_evidence(rows, args.refresh)
 
-    floor = get_settings().confidence_floor
+    floor = get_settings().min_confidence_score
     print("ranking + judging", flush=True)
     per_claim = {"llm": run_variant(rows, evidence)}
     summaries = {"llm": summarize(per_claim["llm"], floor)}

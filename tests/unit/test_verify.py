@@ -74,25 +74,45 @@ def test_rank_rejects_incomplete_assessments(monkeypatch):
         rank_module.score_evidence(claim(), [evidence(0), evidence(1)])
 
 
-def test_judge_returns_nei_without_calling_llm_when_evidence_is_insufficient(monkeypatch):
+def test_judge_returns_nei_without_calling_llm_when_no_evidence_takes_a_stance(monkeypatch):
     monkeypatch.setattr(
         judge_module,
         "get_llm",
-        lambda: pytest.fail("judge must not be called for insufficient evidence"),
+        lambda: pytest.fail("judge must not be called without supporting or refuting evidence"),
     )
 
-    verdict = judge_module.make_verdict(claim(), [evidence(0, "supports"), evidence(1, "neutral")])
+    verdict = judge_module.make_verdict(claim(), [evidence(0, "neutral"), evidence(1, "neutral")])
 
     assert verdict.label == "nei"
     assert verdict.citations == []
 
 
-def test_judge_converts_below_floor_confidence_to_nei(monkeypatch):
+def test_judge_accepts_a_single_confident_piece_of_evidence(monkeypatch):
+    monkeypatch.setattr(
+        judge_module,
+        "get_llm",
+        lambda: StructuredModel(
+            Verdict(
+                claim_id="c1",
+                label="supported",
+                confidence=0.9,
+                rationale="The source confirms it.",
+                citations=["https://example.test/0"],
+            )
+        ),
+    )
+
+    verdict = judge_module.make_verdict(claim(), [evidence(0, "supports")])
+
+    assert verdict.label == "supported"
+
+
+def test_judge_converts_below_min_confidence_score_to_nei(monkeypatch):
     settings = judge_module.get_settings()
     monkeypatch.setattr(
         judge_module,
         "get_settings",
-        lambda: settings.model_copy(update={"confidence_floor": 0.7}),
+        lambda: settings.model_copy(update={"min_confidence_score": 0.7}),
     )
     ranked = [evidence(0, "supports"), evidence(1, "refutes")]
     monkeypatch.setattr(
@@ -113,7 +133,7 @@ def test_judge_converts_below_floor_confidence_to_nei(monkeypatch):
 
     assert verdict.label == "nei"
     assert verdict.citations == ["https://example.test/0"]
-    assert "below the required floor" in verdict.rationale
+    assert "below the minimum confidence score" in verdict.rationale
 
 
 def test_judge_never_returns_citations_outside_ranked_evidence(monkeypatch):
@@ -189,7 +209,7 @@ def test_verify_subgraph_retrieves_ranks_and_judges(monkeypatch):
 
 def test_routing_retries_until_attempts_are_exhausted():
     weak = {"claim": claim(), "evidence": [evidence(0, "neutral")]}
-    strong = {"claim": claim(), "evidence": [evidence(0, "supports"), evidence(1, "refutes")]}
+    strong = {"claim": claim(), "evidence": [evidence(0, "supports"), evidence(1, "neutral")]}
 
     assert routing_module.route_after_rank({**weak, "attempts": 0}) == "write_queries"
     assert routing_module.route_after_rank({**weak, "attempts": 1}) == "write_queries"

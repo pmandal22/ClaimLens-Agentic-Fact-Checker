@@ -90,15 +90,15 @@ def _apply_review(result: ClaimResult, decision: ReviewDecision) -> None:
 
 
 def load_results(
-    storage: Storage, job_id: str, confidence_floor: float | None = None
+    storage: Storage, job_id: str, min_confidence_score: float | None = None
 ) -> list[ClaimResult]:
     """Join the pipeline's claims, evidence and verdicts artifacts by claim id.
 
     If a reviewer has decided on the job, their labels replace the model's.
     Raises FileNotFoundError if a pipeline artifact is missing.
     """
-    if confidence_floor is None:
-        confidence_floor = get_settings().confidence_floor
+    if min_confidence_score is None:
+        min_confidence_score = get_settings().min_confidence_score
     claims = _read_json(storage, f"claims/{job_id}.json")["claims"]
     evidence = _read_json(storage, f"evidence/{job_id}.json")
     verdicts = {
@@ -118,7 +118,7 @@ def load_results(
             claim=claim,
             evidence=[Evidence.model_validate(e) for e in evidence.get(claim.id, [])],
             verdict=verdict,
-            review_reasons=review_reasons(claim, verdict, confidence_floor),
+            review_reasons=review_reasons(claim, verdict, min_confidence_score),
         )
         if decision := decisions.get(claim.id):
             _apply_review(result, decision)

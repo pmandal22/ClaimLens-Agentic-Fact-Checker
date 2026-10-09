@@ -16,14 +16,14 @@ def always_review_categories() -> frozenset[str]:
     return frozenset(policies.get("always_review_categories", []))
 
 
-def review_reasons(claim: Claim, verdict: Verdict | None, confidence_floor: float) -> list[str]:
+def review_reasons(claim: Claim, verdict: Verdict | None, min_confidence_score: float) -> list[str]:
     """Why this claim needs a human before publishing; empty if it doesn't.
 
     An abstention ("nei" or no verdict) is not flagged for low confidence: declining to
     judge can't be a confident wrong verdict, which is the failure review exists to catch.
     """
     reasons = []
-    if verdict and verdict.label != "nei" and verdict.confidence < confidence_floor:
+    if verdict and verdict.label != "nei" and verdict.confidence < min_confidence_score:
         reasons.append(f"Low confidence ({verdict.confidence:.0%})")
     if claim.category in always_review_categories():
         reasons.append(f"Sensitive topic: {claim.category}")

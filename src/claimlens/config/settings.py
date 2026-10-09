@@ -25,12 +25,12 @@ class Settings(BaseSettings):
     max_claims_per_reel: int = 5
     max_keyframes: int = 10
     max_attempts: int = 3  # first try + 2 retries
-    confidence_floor: float = 0.7
+    # Verdicts below this confidence abstain as nei and are flagged for review
+    min_confidence_score: float = Field(default=0.7, ge=0, le=1)
     # When set, POST /checks/{id}/review needs this in the X-Review-Token header.
     review_token: str | None = None
     min_trusted_evidence: int = 2  # stop searching further queries once this many results are found
     evidence_relevance_threshold: float = Field(default=0.5, ge=0, le=1)
-    min_verdict_evidence: int = Field(default=2, ge=1)
     evidence_per_source: int = 3
 
     gcs_bucket: str | None = None  # set to store videos in Google Cloud Storage

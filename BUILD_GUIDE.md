@@ -255,8 +255,8 @@ Build and test this subgraph on single claims before wiring it into the main gra
 
 1. **Retrieve:** use the claim's search terms, querying its category's direct trusted sources first and Tavily as a fallback.
 2. **Rank:** an LLM assesses each result's relevance (0–1) and stance (supports, refutes or neutral). Discard results below `EVIDENCE_RELEVANCE_THRESHOLD` (default `0.5`) and keep the top five.
-3. **Check sufficiency:** require at least `MIN_VERDICT_EVIDENCE` relevant results with a supporting or refuting stance (default `2`). Otherwise return `nei` without asking the judge to guess.
-4. **Judge:** see only ranked evidence. Citations are restricted to its URLs; non-`nei` verdicts below `CONFIDENCE_FLOOR` (default `0.7`) are downgraded to `nei`.
+3. **Check sufficiency:** require at least one relevant result with a supporting or refuting stance. Otherwise return `nei` without asking the judge to guess.
+4. **Judge:** see only ranked evidence. Citations are restricted to its URLs; non-`nei` verdicts below `MIN_CONFIDENCE_SCORE` (default `0.7`) are downgraded to `nei`.
 5. **Persist:** the worker stores ranked evidence and per-claim verdicts under `evidence/{id}.json` and `verdicts/{id}.json`.
 
 The current worker runs this single-pass verification subgraph for each claim. Query rewriting and retrieval retries remain a possible improvement for claims that do not meet the evidence threshold.
@@ -275,17 +275,17 @@ import sqlite3
 from langgraph.types import Send, interrupt, Command
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-CONFIDENCE_FLOOR = 0.7
+MIN_CONFIDENCE_SCORE = 0.7
 
 def fan_out(state: ReelState):
     return [Send("verify_claim", {"claim": c, "attempts": 0}) for c in state["claims"]]
 
 def route_review(state: ReelState) -> str:
-    shaky = any(v.confidence < CONFIDENCE_FLOOR for v in state["verdicts"])
+    shaky = any(v.confidence < MIN_CONFIDENCE_SCORE for v in state["verdicts"])
     return "human_review" if shaky else "report"
 
 def human_review(state: ReelState) -> dict:
-    shaky = [v for v in state["verdicts"] if v.confidence < CONFIDENCE_FLOOR]
+    shaky = [v for v in state["verdicts"] if v.confidence < MIN_CONFIDENCE_SCORE]
     decision = interrupt({"review": [v.model_dump() for v in shaky]})  # pauses here
     return {"overall": decision.get("overall", "reviewed")}
 

@@ -11,29 +11,23 @@ from claimlens.llm.factory import get_llm
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "judge.v1.md"
 
 
-def _insufficient_evidence_verdict(
-    claim_id: str, evidence: list[Evidence], required: int
-) -> Verdict:
-    strong = sum(item.stance in ("supports", "refutes") for item in evidence)
+def _no_evidence_verdict(claim_id: str) -> Verdict:
     return Verdict(
         claim_id=claim_id,
         label="nei",
         confidence=0,
-        rationale=(
-            f"Not enough relevant evidence with a supporting or refuting stance "
-            f"({strong} found; {required} required)."
-        ),
+        rationale="No relevant evidence with a supporting or refuting stance was found.",
         citations=[],
     )
 
 
 def make_verdict(claim: Claim, evidence: list[Evidence]) -> Verdict:
-    """Judge ranked evidence, applying evidence-count, citation, and confidence gates."""
+    """Judge ranked evidence, applying citation and minimum-confidence gates."""
     settings = get_settings()
     claim_id = claim.id
-    strong = [item for item in evidence if item.stance in ("supports", "refutes")]
-    if len(strong) < settings.min_verdict_evidence:
-        return _insufficient_evidence_verdict(claim_id, evidence, settings.min_verdict_evidence)
+    # Nothing to cite: skip the LLM call rather than ask it to guess.
+    if not any(item.stance in ("supports", "refutes") for item in evidence):
+        return _no_evidence_verdict(claim_id)
 
     context = [
         {"url": item.url, "title": item.title, "snippet": item.snippet, "stance": item.stance}
@@ -57,14 +51,14 @@ def make_verdict(claim: Claim, evidence: list[Evidence]) -> Verdict:
             rationale="The judge did not provide a valid citation from the ranked evidence.",
             citations=[],
         )
-    if verdict.label != "nei" and verdict.confidence < settings.confidence_floor:
+    if verdict.label != "nei" and verdict.confidence < settings.min_confidence_score:
         return Verdict(
             claim_id=claim_id,
             label="nei",
             confidence=verdict.confidence,
             rationale=(
                 f"{verdict.rationale} Confidence {verdict.confidence:.2f} is below the "
-                f"required floor of {settings.confidence_floor:.2f}; abstaining."
+                f"minimum confidence score of {settings.min_confidence_score:.2f}; abstaining."
             ),
             citations=citations,
         )

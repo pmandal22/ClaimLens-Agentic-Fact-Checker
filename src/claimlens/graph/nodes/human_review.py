@@ -18,7 +18,7 @@ def verdicts_by_claim(verdicts: Sequence[Verdict]) -> dict[str, Verdict]:
 
 def flagged_claims(claims: Sequence[Claim], verdicts: Sequence[Verdict]) -> dict[str, list[str]]:
     """Claim id -> why a person must decide on it; claims that need no review are left out."""
-    floor = get_settings().confidence_floor
+    floor = get_settings().min_confidence_score
     by_id = verdicts_by_claim(verdicts)
     reasons = {c.id: review_reasons(c, by_id.get(c.id), floor) for c in claims}
     return {claim_id: r for claim_id, r in reasons.items() if r}
