@@ -39,7 +39,7 @@ def test_rank_discards_low_relevance_and_sorts_by_score(monkeypatch):
         rank_module.EvidenceAssessment(index=2, relevance=0.7, stance="neutral"),
     ]
     monkeypatch.setattr(
-        rank_module, "get_llm", lambda: StructuredModel({"assessments": assessments})
+        rank_module, "get_verify_llm", lambda: StructuredModel({"assessments": assessments})
     )
 
     ranked = rank_module.score_evidence(claim(), [evidence(0), evidence(1), evidence(2)])
@@ -55,7 +55,7 @@ def test_rank_keeps_at_most_five(monkeypatch):
         for index in range(6)
     ]
     monkeypatch.setattr(
-        rank_module, "get_llm", lambda: StructuredModel({"assessments": assessments})
+        rank_module, "get_verify_llm", lambda: StructuredModel({"assessments": assessments})
     )
 
     assert len(rank_module.score_evidence(claim(), inputs)) == 5
@@ -64,7 +64,7 @@ def test_rank_keeps_at_most_five(monkeypatch):
 def test_rank_rejects_incomplete_assessments(monkeypatch):
     monkeypatch.setattr(
         rank_module,
-        "get_llm",
+        "get_verify_llm",
         lambda: StructuredModel(
             {"assessments": [{"index": 0, "relevance": 1, "stance": "supports"}]}
         ),
@@ -77,7 +77,7 @@ def test_rank_rejects_incomplete_assessments(monkeypatch):
 def test_judge_returns_nei_without_calling_llm_when_no_evidence_takes_a_stance(monkeypatch):
     monkeypatch.setattr(
         judge_module,
-        "get_llm",
+        "get_verify_llm",
         lambda: pytest.fail("judge must not be called without supporting or refuting evidence"),
     )
 
@@ -91,7 +91,7 @@ def test_judge_returns_nei_without_calling_llm_when_no_evidence_takes_a_stance(m
 def test_judge_accepts_a_single_confident_piece_of_evidence(monkeypatch):
     monkeypatch.setattr(
         judge_module,
-        "get_llm",
+        "get_verify_llm",
         lambda: StructuredModel(
             Verdict(
                 claim_id="c1",
@@ -118,7 +118,7 @@ def test_judge_converts_below_min_confidence_score_to_nei(monkeypatch):
     ranked = [evidence(0, "supports"), evidence(1, "refutes")]
     monkeypatch.setattr(
         judge_module,
-        "get_llm",
+        "get_verify_llm",
         lambda: StructuredModel(
             Verdict(
                 claim_id="c1",
@@ -140,7 +140,7 @@ def test_judge_converts_below_min_confidence_score_to_nei(monkeypatch):
 def test_judge_never_returns_citations_outside_ranked_evidence(monkeypatch):
     monkeypatch.setattr(
         judge_module,
-        "get_llm",
+        "get_verify_llm",
         lambda: StructuredModel(
             Verdict(
                 claim_id="c1",
@@ -161,7 +161,7 @@ def test_judge_never_returns_citations_outside_ranked_evidence(monkeypatch):
 def test_judge_overrides_claim_id_invented_by_model(monkeypatch):
     monkeypatch.setattr(
         judge_module,
-        "get_llm",
+        "get_verify_llm",
         lambda: StructuredModel(
             Verdict(
                 claim_id="made_up_slug",
@@ -186,11 +186,11 @@ def test_verify_subgraph_retrieves_ranks_and_judges(monkeypatch):
     ]
     monkeypatch.setattr(subgraph_module, "retrieve_evidence", lambda _claim, queries=None: found)
     monkeypatch.setattr(
-        rank_module, "get_llm", lambda: StructuredModel({"assessments": assessments})
+        rank_module, "get_verify_llm", lambda: StructuredModel({"assessments": assessments})
     )
     monkeypatch.setattr(
         judge_module,
-        "get_llm",
+        "get_verify_llm",
         lambda: StructuredModel(
             Verdict(
                 claim_id="c1",
@@ -254,7 +254,7 @@ def test_verify_subgraph_rewrites_queries_when_first_search_is_empty(monkeypatch
     )
     monkeypatch.setattr(
         judge_module,
-        "get_llm",
+        "get_verify_llm",
         lambda: StructuredModel(
             Verdict(
                 claim_id="c1",

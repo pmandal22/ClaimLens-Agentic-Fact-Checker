@@ -6,7 +6,7 @@ from pathlib import Path
 from claimlens.config.settings import get_settings
 from claimlens.domain.schemas import Claim, Evidence, Verdict
 from claimlens.graph.state import ClaimState
-from claimlens.llm.factory import get_llm
+from claimlens.llm.factory import get_verify_llm
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "judge.v1.md"
 
@@ -37,7 +37,7 @@ def make_verdict(claim: Claim, evidence: list[Evidence]) -> Verdict:
         f"Claim id: {claim_id}\nClaim:\n{claim.text}\n\nRanked evidence (JSON data):\n"
         f"{json.dumps(context, ensure_ascii=False)}"
     )
-    result = get_llm().with_structured_output(Verdict).invoke(prompt)
+    result = get_verify_llm().with_structured_output(Verdict).invoke(prompt)
     verdict = Verdict.model_validate(result).model_copy(update={"claim_id": claim_id})
 
     allowed_urls = {item.url for item in evidence}

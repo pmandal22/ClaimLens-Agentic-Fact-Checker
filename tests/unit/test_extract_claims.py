@@ -21,7 +21,7 @@ def make(n):
 
 def test_claims_get_stable_ids_and_are_capped(monkeypatch):
     llm = FakeLLM(make(9))
-    monkeypatch.setattr(module, "get_llm", lambda: llm)
+    monkeypatch.setattr(module, "get_extract_llm", lambda: llm)
 
     claims = module.extract_claims("Some transcript")
 
@@ -33,6 +33,6 @@ def test_empty_text_skips_the_llm(monkeypatch):
     def boom():
         raise AssertionError("LLM must not be called")
 
-    monkeypatch.setattr(module, "get_llm", boom)
+    monkeypatch.setattr(module, "get_extract_llm", boom)
 
     assert module.extract_claims("  ", caption="") == []

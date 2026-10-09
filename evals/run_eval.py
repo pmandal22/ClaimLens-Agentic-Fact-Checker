@@ -169,7 +169,8 @@ def main() -> None:
     REPORTS.mkdir(exist_ok=True)
     out = REPORTS / f"eval-{datetime.now().astimezone():%Y%m%d-%H%M%S}.md"
     out.write_text(
-        f"# Claim eval {datetime.now().astimezone():%Y-%m-%d %H:%M}\n\nModel: `{get_settings().claimlens_model}`, "
+        f"# Claim eval {datetime.now().astimezone():%Y-%m-%d %H:%M}\n\n"
+        f"Model: `{get_settings().verify_model or get_settings().claimlens_model}` (rank + judge), "
         f"relevance threshold {get_settings().evidence_relevance_threshold}, "
         f"confidence floor {floor}.\n\n{report}\n",
         encoding="utf-8",

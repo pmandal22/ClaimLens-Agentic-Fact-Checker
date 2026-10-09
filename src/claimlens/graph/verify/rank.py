@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from claimlens.config.settings import get_settings
 from claimlens.domain.schemas import Claim, Evidence
 from claimlens.graph.state import ClaimState
-from claimlens.llm.factory import get_llm
+from claimlens.llm.factory import get_verify_llm
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "llm" / "prompts" / "rank.v1.md"
 MAX_RANKED_EVIDENCE = 5
@@ -38,7 +38,7 @@ def _llm_assess(claim: Claim, items: list[tuple[int, Evidence]]) -> dict[int, tu
         f"Claim:\n{claim.text}\n\nEvidence (JSON data):\n"
         f"{json.dumps(material, ensure_ascii=False)}"
     )
-    result = get_llm().with_structured_output(EvidenceAssessments).invoke(prompt)
+    result = get_verify_llm().with_structured_output(EvidenceAssessments).invoke(prompt)
     assessments = EvidenceAssessments.model_validate(result).assessments
 
     expected = {index for index, _ in items}

@@ -13,6 +13,13 @@ class Settings(BaseSettings):
 
     # e.g. "google_genai:<gemini-model>", "openai:<gpt-model>", "anthropic:<claude-model>"
     claimlens_model: str | None = None
+    # Optional stronger model for ranking evidence and judging verdicts; defaults to claimlens_model
+    verify_model: str | None = None
+    # Applies only with verify_model; None sends no temperature (the model's default)
+    verify_temperature: float | None = None
+    # Optional stronger model for extracting claims; same fallback and temperature rules as verify
+    extract_model: str | None = None
+    extract_temperature: float | None = None
     ingest_path: Literal["asr_ocr", "video_llm"] = "asr_ocr"  # video_llm is Gemini only
     ocr_max_frames: int = Field(default=30, ge=0)  # frames sampled for OCR; 0 means all
     ocr_languages: str = "en"  # comma-separated easyocr codes, e.g. "en,hi"
